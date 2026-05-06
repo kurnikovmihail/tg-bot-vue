@@ -1,0 +1,22 @@
+{
+  "name": "tg-bot-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --open",
+    "start": "npm run dev",
+    "dev:strict": "vite --host 127.0.0.1 --port 5173 --strictPort --open",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173 --open"
+  },
+  "dependencies": {
+    "vue": "^3.5.30",
+    "vue-router": "^4.6.4",
+    "wicg-inert": "^3.1.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.5",
+    "vite": "^8.0.1"
+  }
+}

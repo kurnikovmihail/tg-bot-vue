@@ -584,7 +584,6 @@ onMounted(() => {
       <div class="header-meta">
         <p>Клиент: <strong>{{ activeUserId }}</strong></p>
         <RouterLink v-if="canOpenAdmin" class="btn btn-ghost" to="/admin">Админка</RouterLink>
-        <p v-else class="muted">Админка недоступна</p>
       </div>
     </header>
 

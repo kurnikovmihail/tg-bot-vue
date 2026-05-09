@@ -38,6 +38,12 @@ function ensureLlmConfigured() {
   if (!APP_CONFIG.apiModel) {
     throw new Error('LLM model is missing. Set VITE_LLM_MODEL in .env.local')
   }
+  if (/^https?:\/\//i.test(APP_CONFIG.apiKey)) {
+    throw new Error('LLM API key looks like URL. Check env: put key into VITE_LLM_API_KEY and endpoint into VITE_LLM_API_URL.')
+  }
+  if (/^pza_/i.test(APP_CONFIG.apiUrl)) {
+    throw new Error('LLM API URL looks like API key. Check env: put key into VITE_LLM_API_KEY and endpoint into VITE_LLM_API_URL.')
+  }
 }
 
 export async function generateInitial(order) {

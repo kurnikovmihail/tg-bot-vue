@@ -33,7 +33,6 @@ export const APP_CONFIG = {
   modelMainName: normalized(env.VITE_LLM_MODEL_MAIN, 'GPT-5.4'),
   modelRevisionName: normalized(env.VITE_LLM_MODEL_REVISION, 'GPT-5.4-mini'),
   mockGenerationDelayMs: Number.parseInt(normalized(env.VITE_LLM_DELAY_MS, '1800'), 10) || 1800,
-  testMode: boolFromEnv(env.VITE_LLM_TEST_MODE, true),
   apiKey: normalized(env.VITE_LLM_API_KEY),
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
@@ -41,6 +40,10 @@ export const APP_CONFIG = {
   apiReferer: normalized(env.VITE_LLM_HTTP_REFERER),
   apiTitle: normalized(env.VITE_LLM_APP_TITLE, 'tg-bot-vue')
 }
+
+// Safety fallback:
+// if VITE_LLM_TEST_MODE is missing/broken but API key exists, default to live mode.
+APP_CONFIG.testMode = boolFromEnv(env.VITE_LLM_TEST_MODE, !APP_CONFIG.apiKey)
 
 function canUseLiveApi() {
   return !APP_CONFIG.testMode && Boolean(APP_CONFIG.apiKey) && Boolean(APP_CONFIG.apiUrl) && Boolean(APP_CONFIG.apiModel)

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   ORDER_STATUS_AWAITING_PAYMENT,
   ORDER_STATUS_IN_PROGRESS,
@@ -13,7 +13,7 @@ import {
 import { APP_CONFIG, applyRevision, generateInitial } from '../core/generator'
 import { publicOrderNo } from '../core/orderNumbers'
 import { calculateOrderPrice, hasVolumePricing } from '../core/pricing'
-import { getOrCreateActiveUserId } from '../core/session'
+import { ADMIN_USER_ID, getOrCreateActiveUserId, isAdminUser } from '../core/session'
 import {
   applyRevisionResult,
   cancelOrder,
@@ -56,6 +56,8 @@ import {
 } from '../core/texts'
 
 const activeUserId = ref(0)
+const route = useRoute()
+const router = useRouter()
 const screen = ref('menu')
 const notice = reactive({
   text: '',
@@ -89,6 +91,8 @@ const serviceItems = computed(() =>
     }
   })
 )
+
+const canOpenAdmin = computed(() => isAdminUser(activeUserId.value))
 
 const selectedOffer = computed(() => (selectedServiceKey.value ? getOffer(selectedServiceKey.value) : null))
 
@@ -557,6 +561,12 @@ function handleMenuAction(action) {
 
 onMounted(() => {
   activeUserId.value = getOrCreateActiveUserId()
+  if (route.query.adminDenied === '1') {
+    showNotice(`Доступ к админке разрешен только пользователю ${ADMIN_USER_ID}.`, 'warn')
+    const nextQuery = { ...route.query }
+    delete nextQuery.adminDenied
+    router.replace({ path: '/', query: nextQuery })
+  }
   purgeExpiredOrders(72)
   recoverInProgressOrders().finally(() => {
     refreshMyOrders()
@@ -573,7 +583,8 @@ onMounted(() => {
       </div>
       <div class="header-meta">
         <p>Клиент: <strong>{{ activeUserId }}</strong></p>
-        <RouterLink class="btn btn-ghost" to="/admin">Админка</RouterLink>
+        <RouterLink v-if="canOpenAdmin" class="btn btn-ghost" to="/admin">Админка</RouterLink>
+        <p v-else class="muted">Админка недоступна</p>
       </div>
     </header>
 

@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { buildAdminReport } from '../core/adminReport'
 import { buildLlmPayload } from '../core/generator'
+import { getOrCreateActiveUserId, isAdminUser } from '../core/session'
 import { publicOrderNo } from '../core/orderNumbers'
 import { clearAllOrders, listRecentOrders, resolveOrderInput } from '../core/storage'
 import { STATUS_LABELS } from '../core/catalog'
 
+const router = useRouter()
 const recentOrders = ref([])
 const reportText = ref('')
 const promptInput = ref('')
@@ -86,6 +88,11 @@ function resetAllOrders() {
 }
 
 onMounted(() => {
+  const currentUserId = getOrCreateActiveUserId()
+  if (!isAdminUser(currentUserId)) {
+    router.replace({ path: '/', query: { adminDenied: '1' } })
+    return
+  }
   refreshAdminData()
 })
 </script>

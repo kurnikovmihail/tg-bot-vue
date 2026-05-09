@@ -6,6 +6,8 @@ import {
   ORDER_STATUS_IN_PROGRESS,
   ORDER_STATUS_IN_REVISION,
   ORDER_STATUS_READY,
+  SERVICE_PRESENTATION,
+  SERVICE_REPORT,
   STATUS_LABELS,
   getOffer,
   getServiceMenuItems
@@ -26,6 +28,7 @@ import {
   purgeExpiredOrders,
   saveFeedback,
   setInRevision,
+  setOrderError,
   setReady,
   acceptOrder
 } from '../core/storage'
@@ -139,6 +142,18 @@ const revisionRemaining = computed(() => {
 })
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
+const downloadResultButtonLabel = computed(() => {
+  if (!selectedOrder.value) {
+    return 'Скачать результат'
+  }
+  if (selectedOrder.value.service_type === SERVICE_PRESENTATION) {
+    return 'Скачать материал презентации'
+  }
+  if (selectedOrder.value.service_type === SERVICE_REPORT) {
+    return 'Скачать текст доклада'
+  }
+  return 'Скачать результат'
+})
 
 const promptHintText = computed(() => {
   if (!currentField.value) {
@@ -175,6 +190,17 @@ function showNotice(text, type = 'info') {
   }, 5000)
 }
 
+function extractErrorMessage(error) {
+  if (!error) {
+    return 'Неизвестная техническая ошибка.'
+  }
+  const raw = String(error.message || error || '').trim()
+  if (!raw) {
+    return 'Неизвестная техническая ошибка.'
+  }
+  return raw.length > 220 ? `${raw.slice(0, 217)}...` : raw
+}
+
 function resetDraft(keepService = false) {
   if (!keepService) {
     selectedServiceKey.value = ''
@@ -197,8 +223,8 @@ async function recoverInProgressOrders() {
     try {
       const generated = await generateInitial(order)
       setReady(Number(order.id), generated, APP_CONFIG.revisionWindowHours)
-    } catch {
-      // Keep order in-progress if recovery fails.
+    } catch (error) {
+      setOrderError(Number(order.id), extractErrorMessage(error))
     }
   }
 }
@@ -368,11 +394,16 @@ async function confirmPaymentFlow() {
   }
   selectedOrder.value = started
   showNotice(orderAcceptedText(Number(started.id), Number(started.user_id)), 'success')
+  await runGenerationForOrder(started, { openedFromPayment: true })
+}
+
+async function runGenerationForOrder(order, options = {}) {
   screen.value = 'processing'
   busy.value = true
+  const openedFromPayment = Boolean(options.openedFromPayment)
   try {
-    const generated = await generateInitial(started)
-    const ready = setReady(Number(started.id), generated, APP_CONFIG.revisionWindowHours)
+    const generated = await generateInitial(order)
+    const ready = setReady(Number(order.id), generated, APP_CONFIG.revisionWindowHours)
     if (!ready) {
       showNotice('Ошибка сохранения результата. Попробуйте обновить страницу.', 'error')
       return
@@ -382,12 +413,27 @@ async function confirmPaymentFlow() {
     refreshMyOrders()
     showNotice(resultMessageText(ready), 'success')
     screen.value = 'order-details'
-  } catch {
-    showNotice(`❌ По заказу №${currentOrderId.value} произошла техническая ошибка. Попробуйте снова чуть позже.`, 'error')
-    screen.value = 'orders'
+  } catch (error) {
+    const details = extractErrorMessage(error)
+    const failed = setOrderError(Number(order.id), details)
+    if (failed) {
+      selectedOrder.value = failed
+      currentOrderId.value = Number(failed.id)
+    }
+    refreshMyOrders()
+    screen.value = 'order-details'
+    const prefix = openedFromPayment ? 'после оплаты' : 'при повторной генерации'
+    showNotice(`❌ Ошибка генерации ${prefix}: ${details}`, 'error')
   } finally {
     busy.value = false
   }
+}
+
+async function retryCurrentGeneration() {
+  if (!selectedOrder.value || selectedOrder.value.status !== ORDER_STATUS_IN_PROGRESS || busy.value) {
+    return
+  }
+  await runGenerationForOrder(selectedOrder.value, { openedFromPayment: false })
 }
 
 function openOrder(orderId) {
@@ -486,8 +532,8 @@ async function submitRevision() {
     } else {
       showNotice(resultMessageText(updated), 'success')
     }
-  } catch {
-    showNotice('Не удалось применить правку из-за технической ошибки.', 'error')
+  } catch (error) {
+    showNotice(`Не удалось применить правку: ${extractErrorMessage(error)}`, 'error')
   } finally {
     busy.value = false
   }
@@ -705,7 +751,7 @@ onMounted(() => {
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
         <pre v-if="selectedOrder.result_text" class="result-block">{{ selectedOrder.result_text }}</pre>
         <div v-if="selectedOrder.result_text" class="row">
-          <button class="btn btn-secondary" @click="downloadCurrentResult">Скачать TXT</button>
+          <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
         </div>
 
         <div class="row">
@@ -724,13 +770,21 @@ onMounted(() => {
             ✅ Принять работу
           </button>
           <button
+            v-if="selectedOrder.status === ORDER_STATUS_IN_PROGRESS"
+            class="btn btn-primary"
+            :disabled="busy"
+            @click="retryCurrentGeneration"
+          >
+            🔄 Повторить генерацию
+          </button>
+          <button
             v-if="canRequestRevision(selectedOrder)"
             class="btn btn-secondary"
             @click="beginRevision"
           >
             🔁 Внести правки
           </button>
-          <button class="btn btn-secondary" @click="refreshCurrentOrder">🔄 Обновить</button>
+          <button class="btn btn-secondary" :disabled="busy" @click="refreshCurrentOrder">🔄 Обновить</button>
           <button class="btn btn-ghost" @click="openMyOrders">📂 Мои заказы</button>
           <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>

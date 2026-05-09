@@ -11,12 +11,16 @@ export function buildAdminReport(orders, hours = 24) {
   const byStatus = new Map()
   const byService = new Map()
   let revenue = 0
+  let failedGenerations = 0
   for (const order of recent) {
     const status = order.status || 'unknown'
     const service = order.service_title || 'unknown'
     byStatus.set(status, (byStatus.get(status) || 0) + 1)
     byService.set(service, (byService.get(service) || 0) + 1)
     revenue += Number(order.price_rub || 0)
+    if (order.last_error) {
+      failedGenerations += 1
+    }
   }
 
   const lines = []
@@ -25,6 +29,7 @@ export function buildAdminReport(orders, hours = 24) {
   lines.push('')
   lines.push(`Orders: ${recent.length}`)
   lines.push(`Revenue (planned): ${revenue} RUB`)
+  lines.push(`Orders with generation errors: ${failedGenerations}`)
   lines.push('')
   lines.push('By status:')
   for (const [status, count] of [...byStatus.entries()].sort(([a], [b]) => a.localeCompare(b))) {
@@ -39,9 +44,10 @@ export function buildAdminReport(orders, hours = 24) {
   lines.push('Recent orders:')
   for (const order of [...recent].sort((a, b) => Number(b.id) - Number(a.id))) {
     const publicNo = publicOrderNo(Number(order.id), Number(order.user_id))
-    lines.push(
-      `- ${publicNo} | user_id=${order.user_id} | ${order.service_title} | ${order.status} | ${order.price_rub} RUB | ${order.created_at}`
-    )
+    lines.push(`- ${publicNo} | user_id=${order.user_id} | ${order.service_title} | ${order.status} | ${order.price_rub} RUB | ${order.created_at}`)
+    if (order.last_error) {
+      lines.push(`  error: ${order.last_error}`)
+    }
   }
   lines.push('')
   lines.push('End of report.')

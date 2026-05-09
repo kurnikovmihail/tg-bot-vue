@@ -37,8 +37,9 @@ VITE_LLM_API_KEY=YOUR_API_KEY
 VITE_LLM_MODEL=openai/gpt-5.4
 VITE_LLM_API_URL=https://polza.ai/api/v1/chat/completions
 VITE_LLM_API_MODE=chat_completions
-VITE_LLM_HTTP_REFERER=http://127.0.0.1:5173
-VITE_LLM_APP_TITLE=tg-bot-vue
+VITE_LLM_CLIENT_ID=tg-bot-vue
+VITE_LLM_TIMEOUT_MS=90000
+VITE_LLM_RETRIES=2
 ```
 
 После этого перезапустите `npm run dev` и оформите заказ в интерфейсе.

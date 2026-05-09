@@ -132,7 +132,9 @@ export function createOrder(payload) {
     updated_at: createdAt,
     paid_at: null,
     ready_at: null,
-    closed_at: null
+    closed_at: null,
+    last_error: null,
+    last_error_at: null
   }
 
   const orders = loadOrders()
@@ -199,7 +201,9 @@ export function markPaidAndStart(orderId) {
       ...order,
       status: ORDER_STATUS_IN_PROGRESS,
       paid_at: stamp,
-      updated_at: stamp
+      updated_at: stamp,
+      last_error: null,
+      last_error_at: null
     }
   })
 }
@@ -217,7 +221,9 @@ export function setReady(orderId, resultText, revisionWindowHours = 48) {
       result_version: Number(order.result_version || 0) + 1,
       ready_at: order.ready_at || stamp,
       revision_window_until: order.revision_window_until || windowUntil,
-      updated_at: stamp
+      updated_at: stamp,
+      last_error: null,
+      last_error_at: null
     }
   })
 }
@@ -256,7 +262,20 @@ export function setInRevision(orderId) {
   return updateOrder(orderId, (order) => ({
     ...order,
     status: ORDER_STATUS_IN_REVISION,
-    updated_at: nowIso()
+    updated_at: nowIso(),
+    last_error: null,
+    last_error_at: null
+  }))
+}
+
+export function setOrderError(orderId, message) {
+  purgeExpiredOrders()
+  return updateOrder(orderId, (order) => ({
+    ...order,
+    status: ORDER_STATUS_IN_PROGRESS,
+    updated_at: nowIso(),
+    last_error: String(message || 'Неизвестная ошибка генерации.'),
+    last_error_at: nowIso()
   }))
 }
 

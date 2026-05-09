@@ -102,7 +102,10 @@ export function paymentText(orderId, userId, priceRub, instructions = DEFAULT_PA
     `💳 Заказ ${publicNo} ожидает оплату.\n` +
     `Сумма: ${priceRub} ₽\n\n` +
     `${instructions}\n\n` +
-    'После оплаты нажмите кнопку «✅ Я оплатил(а)».'
+    'После оплаты нажмите кнопку «✅ Я оплатил(а)».\n\n' +
+    '⚠️ Важно:\n' +
+    '• После оплаты возврат средств не предусмотрен.\n' +
+    '• Если возникнет проблема с выполнением заказа, напишите в поддержку — обязательно поможем с решением.'
   )
 }
 
@@ -168,6 +171,11 @@ export function orderDetailsText(order) {
   for (const [key, value] of Object.entries(order.requirements || {})) {
     const label = key.replaceAll('_', ' ').replace(/^\w/, (char) => char.toUpperCase())
     lines.push(`• ${label}: ${getFieldLabelValue(String(value))}`)
+  }
+  if (order.last_error) {
+    lines.push('')
+    lines.push('Последняя ошибка генерации:')
+    lines.push(`• ${String(order.last_error)}`)
   }
   return lines.join('\n')
 }

@@ -19,12 +19,13 @@ export const APP_CONFIG = {
   modelMainName: normalized(env.VITE_LLM_MODEL_MAIN, 'GPT-5.4'),
   modelRevisionName: normalized(env.VITE_LLM_MODEL_REVISION, 'GPT-5.4-mini'),
   requestDelayMs: Number.parseInt(normalized(env.VITE_LLM_DELAY_MS, '800'), 10) || 800,
+  requestTimeoutMs: Number.parseInt(normalized(env.VITE_LLM_TIMEOUT_MS, '90000'), 10) || 90000,
+  requestRetries: Number.parseInt(normalized(env.VITE_LLM_RETRIES, '2'), 10) || 2,
   apiKey: normalized(env.VITE_LLM_API_KEY),
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
   apiModel: normalized(env.VITE_LLM_MODEL, 'openai/gpt-5.4'),
-  apiReferer: normalized(env.VITE_LLM_HTTP_REFERER),
-  apiTitle: normalized(env.VITE_LLM_APP_TITLE, 'tg-bot-vue')
+  apiClientId: normalized(env.VITE_LLM_CLIENT_ID, normalized(env.VITE_LLM_APP_TITLE))
 }
 
 function ensureLlmConfigured() {
@@ -81,16 +82,24 @@ export function buildLlmPayload(order) {
   return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}`
 }
 
+export async function pingLlm() {
+  ensureLlmConfigured()
+  const reply = await callLlm({
+    systemPrompt: 'Ответь коротко: API доступен.',
+    userPrompt: 'Напиши строго: OK',
+    maxTokens: 16
+  })
+  return String(reply || '').trim()
+}
+
 async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
   const headers = {
     Authorization: `Bearer ${APP_CONFIG.apiKey}`,
     'Content-Type': 'application/json'
   }
-  if (APP_CONFIG.apiReferer) {
-    headers['HTTP-Referer'] = APP_CONFIG.apiReferer
-  }
-  if (APP_CONFIG.apiTitle) {
-    headers['X-Title'] = APP_CONFIG.apiTitle
+  // Keep browser calls CORS-safe: API allows `client_id`, but can reject custom headers like X-Title/HTTP-Referer.
+  if (APP_CONFIG.apiClientId) {
+    headers.client_id = APP_CONFIG.apiClientId
   }
 
   const mode = APP_CONFIG.apiMode.toLowerCase()
@@ -116,7 +125,7 @@ async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
     }
   }
 
-  const response = await fetch(APP_CONFIG.apiUrl, {
+  const response = await fetchWithRetry(APP_CONFIG.apiUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify(body)
@@ -133,6 +142,60 @@ async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
     throw new Error('LLM API returned empty text.')
   }
   return text
+}
+
+async function fetchWithRetry(url, options) {
+  const retries = Math.max(0, APP_CONFIG.requestRetries)
+  let attempt = 0
+  let lastError = null
+
+  while (attempt <= retries) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), APP_CONFIG.requestTimeoutMs)
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      })
+      clearTimeout(timer)
+      if (response.ok) {
+        return response
+      }
+      const details = await safeReadError(response)
+      const message = `LLM API error ${response.status}: ${details}`
+      if (!isRetryableStatus(response.status) || attempt === retries) {
+        throw new Error(message)
+      }
+      lastError = new Error(message)
+    } catch (error) {
+      clearTimeout(timer)
+      const text = String(error?.message || '')
+      if (!isRetryableError(error) || attempt === retries) {
+        if (text.toLowerCase().includes('abort')) {
+          throw new Error(`LLM API timeout after ${APP_CONFIG.requestTimeoutMs}ms`)
+        }
+        throw error
+      }
+      lastError = error
+    }
+
+    attempt += 1
+    await sleep(700 * attempt)
+  }
+
+  throw lastError || new Error('LLM request failed after retries.')
+}
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+function isRetryableError(error) {
+  if (!error) {
+    return false
+  }
+  const text = String(error.message || '').toLowerCase()
+  return text.includes('failed to fetch') || text.includes('network') || text.includes('timeout') || text.includes('abort')
 }
 
 async function safeReadError(response) {

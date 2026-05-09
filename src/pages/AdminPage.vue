@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { buildAdminReport } from '../core/adminReport'
-import { buildLlmPayload } from '../core/generator'
+import { APP_CONFIG, buildLlmPayload, pingLlm } from '../core/generator'
 import { getOrCreateActiveUserId, isAdminUser } from '../core/session'
 import { publicOrderNo } from '../core/orderNumbers'
 import { clearAllOrders, listRecentOrders, resolveOrderInput } from '../core/storage'
@@ -17,6 +17,8 @@ const promptOrderNo = ref('')
 const reportOrdersCount = ref(0)
 const reportRevenue = ref(0)
 const alertText = ref('')
+const llmStatus = ref('не проверено')
+const llmBusy = ref(false)
 
 const reportFileName = computed(() => `admin_report_${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.txt`)
 
@@ -87,6 +89,33 @@ function resetAllOrders() {
   setAlert('Локальная база заказов очищена.')
 }
 
+function maskSecret(value) {
+  const text = String(value || '')
+  if (!text) {
+    return 'не задан'
+  }
+  if (text.length <= 8) {
+    return `${text.slice(0, 2)}***`
+  }
+  return `${text.slice(0, 4)}...${text.slice(-4)}`
+}
+
+async function checkLlmConnection() {
+  llmBusy.value = true
+  llmStatus.value = 'проверка...'
+  try {
+    const reply = await pingLlm()
+    llmStatus.value = `ok (${reply || 'без текста'})`
+    setAlert('Проверка LLM прошла успешно.')
+  } catch (error) {
+    const message = String(error?.message || error || 'unknown error')
+    llmStatus.value = `ошибка: ${message}`
+    setAlert(`LLM недоступна: ${message}`)
+  } finally {
+    llmBusy.value = false
+  }
+}
+
 onMounted(() => {
   const currentUserId = getOrCreateActiveUserId()
   if (!isAdminUser(currentUserId)) {
@@ -130,6 +159,17 @@ onMounted(() => {
       </div>
 
       <pre class="mono-block">{{ reportText }}</pre>
+    </section>
+
+    <section class="card stack">
+      <h2>Диагностика LLM</h2>
+      <p class="muted">Модель: <strong>{{ APP_CONFIG.apiModel }}</strong></p>
+      <p class="muted">API URL: <code>{{ APP_CONFIG.apiUrl }}</code></p>
+      <p class="muted">Ключ: <code>{{ maskSecret(APP_CONFIG.apiKey) }}</code></p>
+      <p class="muted">Статус: <strong>{{ llmStatus }}</strong></p>
+      <div class="row">
+        <button class="btn btn-primary" :disabled="llmBusy" @click="checkLlmConnection">Проверить связь с LLM</button>
+      </div>
     </section>
 
     <section class="card stack">

@@ -26,14 +26,13 @@
 ## Важное
 
 - Данные заказов хранятся локально (LocalStorage) и автоматически чистятся по TTL 72 часа.
-- Генерация результата сейчас работает в тестовом режиме (`APP_CONFIG.testMode = true` в `src/core/generator.js`).
+- Генерация результата работает только через подключенную API-модель.
 
 ## Подключение API модели (для теста)
 
 Создайте файл `.env.local` в корне проекта:
 
 ```env
-VITE_LLM_TEST_MODE=false
 VITE_LLM_API_KEY=YOUR_API_KEY
 VITE_LLM_MODEL=openai/gpt-5.4
 VITE_LLM_API_URL=https://polza.ai/api/v1/chat/completions

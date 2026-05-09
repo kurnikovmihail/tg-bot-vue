@@ -1,20 +1,6 @@
-import { LLM_CHANNEL_RULE, LLM_GLOBAL_QUALITY_RULES, SERVICE_PRESENTATION, SERVICE_REFERAT } from './catalog'
+import { LLM_CHANNEL_RULE, LLM_GLOBAL_QUALITY_RULES } from './catalog'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {}
-
-function boolFromEnv(value, fallback) {
-  if (value === undefined || value === null || String(value).trim() === '') {
-    return fallback
-  }
-  const normalized = String(value).trim().toLowerCase()
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true
-  }
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false
-  }
-  return fallback
-}
 
 function normalized(value, fallback = '') {
   const raw = String(value ?? '').trim()
@@ -32,7 +18,7 @@ export const APP_CONFIG = {
   revisionWindowHours: 48,
   modelMainName: normalized(env.VITE_LLM_MODEL_MAIN, 'GPT-5.4'),
   modelRevisionName: normalized(env.VITE_LLM_MODEL_REVISION, 'GPT-5.4-mini'),
-  mockGenerationDelayMs: Number.parseInt(normalized(env.VITE_LLM_DELAY_MS, '1800'), 10) || 1800,
+  requestDelayMs: Number.parseInt(normalized(env.VITE_LLM_DELAY_MS, '800'), 10) || 800,
   apiKey: normalized(env.VITE_LLM_API_KEY),
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
@@ -41,55 +27,21 @@ export const APP_CONFIG = {
   apiTitle: normalized(env.VITE_LLM_APP_TITLE, 'tg-bot-vue')
 }
 
-// Safety fallback:
-// if VITE_LLM_TEST_MODE is missing/broken but API key exists, default to live mode.
-APP_CONFIG.testMode = boolFromEnv(env.VITE_LLM_TEST_MODE, !APP_CONFIG.apiKey)
-
-function canUseLiveApi() {
-  return !APP_CONFIG.testMode && Boolean(APP_CONFIG.apiKey) && Boolean(APP_CONFIG.apiUrl) && Boolean(APP_CONFIG.apiModel)
+function ensureLlmConfigured() {
+  if (!APP_CONFIG.apiKey) {
+    throw new Error('LLM API key is missing. Set VITE_LLM_API_KEY in .env.local')
+  }
+  if (!APP_CONFIG.apiUrl) {
+    throw new Error('LLM API URL is missing. Set VITE_LLM_API_URL in .env.local')
+  }
+  if (!APP_CONFIG.apiModel) {
+    throw new Error('LLM model is missing. Set VITE_LLM_MODEL in .env.local')
+  }
 }
 
 export async function generateInitial(order) {
-  await sleep(APP_CONFIG.mockGenerationDelayMs)
-  if (canUseLiveApi()) {
-    return generateInitialWithLlm(order)
-  }
-  if (APP_CONFIG.testMode) {
-    return generateTestStub(order)
-  }
-  if (order.service_type === SERVICE_REFERAT) {
-    return generateReferat(order)
-  }
-  if (order.service_type === SERVICE_PRESENTATION) {
-    return generatePresentation(order)
-  }
-  return generateGeneric(order)
-}
-
-export async function applyRevision(order, requestText) {
-  await sleep(Math.max(900, Math.round(APP_CONFIG.mockGenerationDelayMs * 0.6)))
-  if (canUseLiveApi()) {
-    return applyRevisionWithLlm(order, requestText)
-  }
-  if (APP_CONFIG.testMode) {
-    const base = order.result_text || generateTestStub(order)
-    const stamp = new Date().toISOString()
-    return `${base}\n\n========================================\nTEST MODE: правка применена\nВремя: ${stamp}\nЗапрос правки: ${requestText}\n`
-  }
-  const currentText = order.result_text || ''
-  const stamp = new Date().toISOString()
-  return `${currentText}\n\n========================================\nОбновление версии (mini: ${APP_CONFIG.modelRevisionName})\nВремя: ${stamp}\nЗапрос правки: ${requestText}\nСтатус: изменения внесены в текущую версию.\n`
-}
-
-export function buildLlmPayload(order) {
-  const req = order.frozen_requirements || {}
-  const reqLines = Object.entries(req)
-    .map(([key, value]) => `- ${key}: ${value}`)
-    .join('\n')
-  return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}`
-}
-
-async function generateInitialWithLlm(order) {
+  ensureLlmConfigured()
+  await sleep(APP_CONFIG.requestDelayMs)
   const prompt = buildLlmPayload(order)
   return callLlm({
     systemPrompt: 'Сгенерируй итоговую учебную работу по требованиям клиента.',
@@ -98,7 +50,10 @@ async function generateInitialWithLlm(order) {
   })
 }
 
-async function applyRevisionWithLlm(order, requestText) {
+export async function applyRevision(order, requestText) {
+  ensureLlmConfigured()
+  await sleep(Math.max(500, Math.round(APP_CONFIG.requestDelayMs * 0.7)))
+
   const prompt = buildLlmPayload(order)
   const previous = String(order.result_text || '').trim()
   const userPrompt = [
@@ -116,6 +71,14 @@ async function applyRevisionWithLlm(order, requestText) {
     userPrompt,
     maxTokens: 7000
   })
+}
+
+export function buildLlmPayload(order) {
+  const req = order.frozen_requirements || {}
+  const reqLines = Object.entries(req)
+    .map(([key, value]) => `- ${key}: ${value}`)
+    .join('\n')
+  return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}`
 }
 
 async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
@@ -231,59 +194,4 @@ function extractLlmText(data) {
   }
 
   return ''
-}
-
-function generateReferat(order) {
-  const req = order.frozen_requirements || {}
-  const stamp = new Date().toISOString()
-  return (
-    'РЕФЕРАТ\n' +
-    `Тема: ${req.topic || '—'}\n` +
-    `Предмет: ${req.subject || '—'}\n` +
-    `Уровень: ${req.level || '—'}\n` +
-    `Объем: ${req.volume || '—'}\n\n` +
-    `Модель генерации: ${APP_CONFIG.modelMainName}\n` +
-    `Дата генерации: ${stamp}\n\n` +
-    '1. Введение\nКратко раскрывается актуальность темы и цель работы.\n\n' +
-    '2. Основная часть\nЛогичный разбор темы с делением на подпункты.\n\n' +
-    '3. Заключение\nИтоги и выводы по теме.\n\n' +
-    '4. Список литературы\nФормируется по требованиям заказа.\n\n' +
-    'Примечание: это тестовая заготовка. После подключения реального LLM API здесь будет полноценный контент.'
-  )
-}
-
-function generatePresentation(order) {
-  const req = order.frozen_requirements || {}
-  const slidesCount = req.slides_count || '12'
-  const stamp = new Date().toISOString()
-  return (
-    'ПРЕЗЕНТАЦИЯ\n' +
-    `Тема: ${req.topic || '—'}\n` +
-    `Предмет: ${req.subject || '—'}\n` +
-    `Слайды: ${slidesCount}\n` +
-    `Стиль: ${req.style || '—'}\n\n` +
-    `Модель генерации: ${APP_CONFIG.modelMainName}\n` +
-    `Дата генерации: ${stamp}\n\n` +
-    'Структура слайдов:\n' +
-    '1. Титульный\n2. Актуальность темы\n3. Цель и задачи\n4-8. Основные блоки содержания\n9-10. Примеры / кейсы\n11. Выводы\n12. Итоговый слайд\n\n' +
-    'Примечание: это тестовая заготовка. После подключения реального LLM API здесь будет полноценный материал.'
-  )
-}
-
-function generateGeneric(order) {
-  const req = order.frozen_requirements || {}
-  return `ЗАКАЗ №${order.id}\nТип: ${order.service_type}\nТема: ${req.topic || '—'}\n\nМодель генерации: ${APP_CONFIG.modelMainName}\nТестовая версия результата.`
-}
-
-function generateTestStub(order) {
-  const req = order.frozen_requirements || {}
-  return (
-    'TEST MODE RESULT\n' +
-    `Заказ №${order.id || '—'}\n` +
-    `Тип: ${order.service_type || '—'}\n` +
-    `Тема: ${req.topic || '—'}\n` +
-    `Предмет: ${req.subject || '—'}\n\n` +
-    'Это непустая заглушка результата для безопасного прогона флоу.\n' +
-    'Подключите реальный LLM-генератор для боевого контента.'
-  )
 }

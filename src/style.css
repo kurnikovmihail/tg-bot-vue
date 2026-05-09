@@ -96,6 +96,11 @@ pre {
   box-shadow: var(--shadow-1);
 }
 
+.header-title-slot {
+  flex: 1;
+  min-height: 1px;
+}
+
 .header-meta {
   display: grid;
   gap: var(--space-3);

@@ -27,3 +27,21 @@
 
 - Данные заказов хранятся локально (LocalStorage) и автоматически чистятся по TTL 72 часа.
 - Генерация результата сейчас работает в тестовом режиме (`APP_CONFIG.testMode = true` в `src/core/generator.js`).
+
+## Подключение API модели (для теста)
+
+Создайте файл `.env.local` в корне проекта:
+
+```env
+VITE_LLM_TEST_MODE=false
+VITE_LLM_API_KEY=YOUR_API_KEY
+VITE_LLM_MODEL=openai/gpt-5.4
+VITE_LLM_API_URL=https://polza.ai/api/v1/chat/completions
+VITE_LLM_API_MODE=chat_completions
+VITE_LLM_HTTP_REFERER=http://127.0.0.1:5173
+VITE_LLM_APP_TITLE=tg-bot-vue
+```
+
+После этого перезапустите `npm run dev` и оформите заказ в интерфейсе.
+
+Важно: `.env.local` не коммитится, но в чистом фронтенде ключ все равно может быть виден в браузере. Для продакшена нужен backend/proxy.

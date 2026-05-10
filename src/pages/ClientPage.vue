@@ -142,7 +142,7 @@ const revisionRemaining = computed(() => {
 })
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
-const currentResultText = computed(() => String(selectedOrder.value?.result_text || ''))
+const currentResultText = computed(() => String(selectedOrder.value?.result_text || '').trim())
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -565,25 +565,69 @@ function submitFeedback() {
   goMenu()
 }
 
-function downloadCurrentResult() {
+async function saveResultFile(blob, filename) {
+  const nav = window.navigator
+
+  // Modern desktop browsers with native file picker.
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: 'Text file',
+          accept: { 'text/plain': ['.txt'] }
+        }
+      ]
+    })
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return 'saved'
+  }
+
+  // Mobile-friendly fallback: share a real file via system sheet.
+  if (typeof File !== 'undefined' && nav.canShare && nav.share) {
+    const file = new File([blob], filename, { type: 'text/plain;charset=utf-8' })
+    if (nav.canShare({ files: [file] })) {
+      await nav.share({
+        files: [file],
+        title: filename,
+        text: 'Результат заказа'
+      })
+      return 'shared'
+    }
+  }
+
+  const link = document.createElement('a')
+  link.href = window.URL.createObjectURL(blob)
+  link.download = filename
+  link.rel = 'noopener'
+  link.style.display = 'none'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(link.href)
+  }, 1500)
+  return 'downloaded'
+}
+
+async function downloadCurrentResult() {
   if (!selectedOrder.value || !currentResultText.value.trim()) {
     return
   }
   try {
     const { blob, filename } = exportOrderResultAsFile(selectedOrder.value)
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.rel = 'noopener'
-    link.style.display = 'none'
-    document.body.append(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => {
-      window.URL.revokeObjectURL(url)
-    }, 1500)
-    showNotice('Файл подготовлен. Если скачивание не началось — откройте результат и скопируйте текст.', 'info')
+    const mode = await saveResultFile(blob, filename)
+    if (mode === 'shared') {
+      showNotice('Открылось системное меню: сохраните файл в удобное место.', 'info')
+      return
+    }
+    if (mode === 'saved') {
+      showNotice('Файл сохранен.', 'success')
+      return
+    }
+    showNotice('Скачивание запущено. Если файл не сохранился, откройте результат и скопируйте текст.', 'info')
   } catch {
     openResultViewer()
     showNotice('Не удалось скачать файл в этом браузере. Открыл результат для просмотра.', 'warn')

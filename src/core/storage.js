@@ -341,7 +341,8 @@ export function resolveOrderInput(rawValue) {
 export function exportOrderResultAsFile(order) {
   const safeText = String(order?.result_text || '').trim() || 'Результат временно пуст. Попробуйте запросить правку.'
   const filename = `order_${order.id}_v${order.result_version}.txt`
-  const blob = new Blob([safeText], { type: 'text/plain;charset=utf-8' })
+  const utf8Bom = '\uFEFF'
+  const blob = new Blob([utf8Bom, safeText], { type: 'text/plain;charset=utf-8' })
   return { blob, filename }
 }
 

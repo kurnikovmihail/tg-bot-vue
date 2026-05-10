@@ -106,7 +106,24 @@ export function buildLlmPayload(order) {
   const reqLines = Object.entries(req)
     .map(([key, value]) => `- ${key}: ${value}`)
     .join('\n')
-  return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}`
+  const commonOutputRule = [
+    'Формат ответа (обязательно):',
+    '- Выводи только финальный материал без пояснений, рассуждений и служебных фраз.',
+    '- Не добавляй префиксы вроде "Вот результат", "Ниже файл", "Комментарий".',
+    '- Не задавай встречных вопросов в финальном ответе.'
+  ].join('\n')
+
+  const presentationOutputRule =
+    order.service_type === 'presentation'
+      ? [
+          '',
+          'Дополнительное правило для презентации:',
+          '- Сформируй результат как готовый текст презентации по слайдам (Слайд 1, Слайд 2, ...),',
+          '- для каждого слайда: заголовок и 3-6 кратких пунктов, без лишних пояснений вне слайдов.'
+        ].join('\n')
+      : ''
+
+  return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}\n\n${commonOutputRule}${presentationOutputRule}`
 }
 
 export async function pingLlm() {

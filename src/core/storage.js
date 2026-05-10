@@ -5,6 +5,7 @@ import {
   ORDER_STATUS_IN_PROGRESS,
   ORDER_STATUS_IN_REVISION,
   ORDER_STATUS_READY,
+  SERVICE_PRESENTATION,
   getOffer
 } from './catalog'
 import { publicOrderNo } from './orderNumbers'
@@ -338,12 +339,76 @@ export function resolveOrderInput(rawValue) {
   return orders.find((order) => publicOrderNo(Number(order.id), Number(order.user_id)).toUpperCase() === normalized) || null
 }
 
-export function exportOrderResultAsFile(order) {
-  const safeText = String(order?.result_text || '').trim() || 'Результат временно пуст. Попробуйте запросить правку.'
-  const filename = `order_${order.id}_v${order.result_version}.txt`
+function escapeHtml(text) {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+}
+
+function buildWordDocumentBlob(safeText) {
+  const htmlBody = escapeHtml(safeText).replaceAll('\n', '<br>')
+  const html = [
+    '<!DOCTYPE html>',
+    '<html>',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<title>Документ</title>',
+    '<style>body{font-family:Calibri,Arial,sans-serif;font-size:12pt;line-height:1.4;}h1{font-size:16pt;}</style>',
+    '</head>',
+    '<body>',
+    htmlBody,
+    '</body>',
+    '</html>'
+  ].join('')
   const utf8Bom = '\uFEFF'
-  const blob = new Blob([utf8Bom, safeText], { type: 'text/plain;charset=utf-8' })
-  return { blob, filename }
+  return new Blob([utf8Bom, html], { type: 'application/msword;charset=utf-8' })
+}
+
+async function buildPresentationPdfBlob(safeText) {
+  const { jsPDF } = await import('jspdf')
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const margin = 40
+  const top = 52
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const maxWidth = pageWidth - margin * 2
+  const lineHeight = 16
+  let cursorY = top
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(12)
+
+  const rawLines = String(safeText || '').split('\n')
+  for (const rawLine of rawLines) {
+    const line = rawLine.trimEnd()
+    const parts = doc.splitTextToSize(line || ' ', maxWidth)
+    for (const part of parts) {
+      if (cursorY > pageHeight - margin) {
+        doc.addPage()
+        cursorY = top
+      }
+      doc.text(part, margin, cursorY)
+      cursorY += lineHeight
+    }
+    cursorY += 4
+  }
+
+  return doc.output('blob')
+}
+
+export async function exportOrderResultAsFile(order) {
+  const safeText = String(order?.result_text || '').trim() || 'Результат временно пуст. Попробуйте запросить правку.'
+  const base = `order_${order.id}_v${order.result_version}`
+
+  if (order?.service_type === SERVICE_PRESENTATION) {
+    const blob = await buildPresentationPdfBlob(safeText)
+    return { blob, filename: `${base}.pdf` }
+  }
+
+  const blob = buildWordDocumentBlob(safeText)
+  return { blob, filename: `${base}.doc` }
 }
 
 export function clearAllOrders() {

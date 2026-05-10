@@ -567,6 +567,10 @@ function submitFeedback() {
 
 async function saveResultFile(blob, filename) {
   const nav = window.navigator
+  const lowerName = String(filename || '').toLowerCase()
+  const ext = lowerName.endsWith('.pdf') ? '.pdf' : lowerName.endsWith('.doc') ? '.doc' : '.txt'
+  const mime = blob?.type || (ext === '.pdf' ? 'application/pdf' : ext === '.doc' ? 'application/msword' : 'text/plain')
+  const fileDescription = ext === '.pdf' ? 'PDF document' : ext === '.doc' ? 'Word document' : 'Text file'
 
   // Modern desktop browsers with native file picker.
   if (window.showSaveFilePicker) {
@@ -574,8 +578,8 @@ async function saveResultFile(blob, filename) {
       suggestedName: filename,
       types: [
         {
-          description: 'Text file',
-          accept: { 'text/plain': ['.txt'] }
+          description: fileDescription,
+          accept: { [mime]: [ext] }
         }
       ]
     })
@@ -587,7 +591,7 @@ async function saveResultFile(blob, filename) {
 
   // Mobile-friendly fallback: share a real file via system sheet.
   if (typeof File !== 'undefined' && nav.canShare && nav.share) {
-    const file = new File([blob], filename, { type: 'text/plain;charset=utf-8' })
+    const file = new File([blob], filename, { type: mime })
     if (nav.canShare({ files: [file] })) {
       await nav.share({
         files: [file],
@@ -617,7 +621,7 @@ async function downloadCurrentResult() {
     return
   }
   try {
-    const { blob, filename } = exportOrderResultAsFile(selectedOrder.value)
+    const { blob, filename } = await exportOrderResultAsFile(selectedOrder.value)
     const mode = await saveResultFile(blob, filename)
     if (mode === 'shared') {
       showNotice('Открылось системное меню: сохраните файл в удобное место.', 'info')

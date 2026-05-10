@@ -28,20 +28,34 @@
 - Данные заказов хранятся локально (LocalStorage) и автоматически чистятся по TTL 72 часа.
 - Генерация результата работает только через подключенную API-модель.
 
-## Подключение API модели (для теста)
+## Подключение API модели (рекомендуемый режим для Vercel)
 
-Создайте файл `.env.local` в корне проекта:
+В проекте есть serverless relay endpoint: `/api/llm`.
+Клиент (браузер) обращается к нему, а ключ хранится только в серверных переменных Vercel.
+
+### 1) Vercel Environment Variables (серверные, без `VITE_`)
 
 ```env
-VITE_LLM_API_KEY=YOUR_API_KEY
+LLM_API_KEY=YOUR_API_KEY
+LLM_MODEL=openai/gpt-5.4
+LLM_API_URL=https://polza.ai/api/v1/chat/completions
+LLM_API_MODE=chat_completions
+LLM_CLIENT_ID=tg-bot-vue
+```
+
+### 2) Client vars (можно в `.env.local` для локалки или в Vercel)
+
+```env
 VITE_LLM_MODEL=openai/gpt-5.4
-VITE_LLM_API_URL=https://polza.ai/api/v1/chat/completions
-VITE_LLM_API_MODE=chat_completions
-VITE_LLM_CLIENT_ID=tg-bot-vue
+VITE_LLM_TRANSPORT=relay
+VITE_LLM_RELAY_PATH=/api/llm
 VITE_LLM_TIMEOUT_MS=90000
 VITE_LLM_RETRIES=2
 ```
 
-После этого перезапустите `npm run dev` и оформите заказ в интерфейсе.
+### 3) Локальный запуск
 
-Важно: `.env.local` не коммитится, но в чистом фронтенде ключ все равно может быть виден в браузере. Для продакшена нужен backend/proxy.
+1. `npm run dev`
+2. Для локального relay нужен запущенный Vercel runtime (`vercel dev`) либо можно поставить `VITE_LLM_TRANSPORT=direct` и задать `VITE_LLM_API_KEY`.
+
+Важно: `VITE_LLM_API_KEY` в production лучше не использовать, чтобы ключ не попадал в клиентский bundle.

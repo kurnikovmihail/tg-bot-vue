@@ -21,6 +21,8 @@ export const APP_CONFIG = {
   requestDelayMs: Number.parseInt(normalized(env.VITE_LLM_DELAY_MS, '800'), 10) || 800,
   requestTimeoutMs: Number.parseInt(normalized(env.VITE_LLM_TIMEOUT_MS, '90000'), 10) || 90000,
   requestRetries: Number.parseInt(normalized(env.VITE_LLM_RETRIES, '2'), 10) || 2,
+  transport: normalized(env.VITE_LLM_TRANSPORT, 'auto').toLowerCase(),
+  relayPath: normalized(env.VITE_LLM_RELAY_PATH, '/api/llm'),
   apiKey: normalized(env.VITE_LLM_API_KEY),
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
@@ -28,15 +30,34 @@ export const APP_CONFIG = {
   apiClientId: normalized(env.VITE_LLM_CLIENT_ID, normalized(env.VITE_LLM_APP_TITLE))
 }
 
+function getTransportMode() {
+  const mode = APP_CONFIG.transport
+  if (mode === 'direct' || mode === 'relay') {
+    return mode
+  }
+  return APP_CONFIG.apiKey ? 'direct' : 'relay'
+}
+
+export function getEffectiveLlmTransport() {
+  return getTransportMode()
+}
+
 function ensureLlmConfigured() {
+  const mode = getTransportMode()
+  if (!APP_CONFIG.apiModel) {
+    throw new Error('LLM model is missing. Set VITE_LLM_MODEL in env.')
+  }
+  if (mode === 'relay') {
+    if (!APP_CONFIG.relayPath) {
+      throw new Error('LLM relay path is missing. Set VITE_LLM_RELAY_PATH in env.')
+    }
+    return
+  }
   if (!APP_CONFIG.apiKey) {
-    throw new Error('LLM API key is missing. Set VITE_LLM_API_KEY in .env.local')
+    throw new Error('LLM API key is missing. Set VITE_LLM_API_KEY in env or use relay mode.')
   }
   if (!APP_CONFIG.apiUrl) {
-    throw new Error('LLM API URL is missing. Set VITE_LLM_API_URL in .env.local')
-  }
-  if (!APP_CONFIG.apiModel) {
-    throw new Error('LLM model is missing. Set VITE_LLM_MODEL in .env.local')
+    throw new Error('LLM API URL is missing. Set VITE_LLM_API_URL in env.')
   }
   if (/^https?:\/\//i.test(APP_CONFIG.apiKey)) {
     throw new Error('LLM API key looks like URL. Check env: put key into VITE_LLM_API_KEY and endpoint into VITE_LLM_API_URL.')
@@ -99,6 +120,43 @@ export async function pingLlm() {
 }
 
 async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
+  const mode = getTransportMode()
+  if (mode === 'relay') {
+    return callLlmViaRelay({ systemPrompt, userPrompt, maxTokens })
+  }
+
+  return callLlmDirect({ systemPrompt, userPrompt, maxTokens })
+}
+
+async function callLlmViaRelay({ systemPrompt, userPrompt, maxTokens }) {
+  const response = await fetchWithRetry(APP_CONFIG.relayPath, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      model: APP_CONFIG.apiModel,
+      apiMode: APP_CONFIG.apiMode
+    })
+  })
+
+  if (!response.ok) {
+    const details = await safeReadError(response)
+    throw new Error(`LLM relay error ${response.status}: ${details}`)
+  }
+
+  const data = await response.json()
+  const text = extractLlmText(data)
+  if (!text) {
+    throw new Error('LLM relay returned empty text.')
+  }
+  return text
+}
+
+async function callLlmDirect({ systemPrompt, userPrompt, maxTokens }) {
   const headers = {
     Authorization: `Bearer ${APP_CONFIG.apiKey}`,
     'Content-Type': 'application/json'
@@ -210,6 +268,12 @@ async function safeReadError(response) {
     if (typeof data?.error?.message === 'string') {
       return data.error.message
     }
+    if (typeof data?.message === 'string') {
+      return data.message
+    }
+    if (typeof data?.details === 'string') {
+      return data.details
+    }
     return JSON.stringify(data)
   } catch {
     try {
@@ -221,6 +285,9 @@ async function safeReadError(response) {
 }
 
 function extractLlmText(data) {
+  if (typeof data?.text === 'string' && data.text.trim()) {
+    return data.text.trim()
+  }
   if (typeof data?.output_text === 'string' && data.output_text.trim()) {
     return data.output_text.trim()
   }

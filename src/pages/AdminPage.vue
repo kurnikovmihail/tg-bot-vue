@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { buildAdminReport } from '../core/adminReport'
-import { APP_CONFIG, buildLlmPayload, pingLlm } from '../core/generator'
+import { APP_CONFIG, buildLlmPayload, getEffectiveLlmTransport, pingLlm } from '../core/generator'
 import { getOrCreateActiveUserId, isAdminUser } from '../core/session'
 import { publicOrderNo } from '../core/orderNumbers'
 import { clearAllOrders, listRecentOrders, resolveOrderInput } from '../core/storage'
@@ -19,6 +19,7 @@ const reportRevenue = ref(0)
 const alertText = ref('')
 const llmStatus = ref('не проверено')
 const llmBusy = ref(false)
+const effectiveTransport = computed(() => getEffectiveLlmTransport())
 
 const reportFileName = computed(() => `admin_report_${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.txt`)
 
@@ -163,6 +164,8 @@ onMounted(() => {
 
     <section class="card stack">
       <h2>Диагностика LLM</h2>
+      <p class="muted">Транспорт: <strong>{{ APP_CONFIG.transport }}</strong> (факт: <strong>{{ effectiveTransport }}</strong>)</p>
+      <p class="muted">Relay path: <code>{{ APP_CONFIG.relayPath }}</code></p>
       <p class="muted">Модель: <strong>{{ APP_CONFIG.apiModel }}</strong></p>
       <p class="muted">API URL: <code>{{ APP_CONFIG.apiUrl }}</code></p>
       <p class="muted">Ключ: <code>{{ maskSecret(APP_CONFIG.apiKey) }}</code></p>

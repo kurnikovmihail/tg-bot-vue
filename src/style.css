@@ -183,6 +183,11 @@ pre {
   line-height: 1.5;
 }
 
+.result-viewer {
+  max-height: none;
+  min-height: 52vh;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

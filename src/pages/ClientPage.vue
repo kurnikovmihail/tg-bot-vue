@@ -142,6 +142,7 @@ const revisionRemaining = computed(() => {
 })
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
+const currentResultText = computed(() => String(selectedOrder.value?.result_text || ''))
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -565,18 +566,48 @@ function submitFeedback() {
 }
 
 function downloadCurrentResult() {
-  if (!selectedOrder.value || !selectedOrder.value.result_text) {
+  if (!selectedOrder.value || !currentResultText.value.trim()) {
     return
   }
-  const { blob, filename } = exportOrderResultAsFile(selectedOrder.value)
-  const url = window.URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.append(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
+  try {
+    const { blob, filename } = exportOrderResultAsFile(selectedOrder.value)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.rel = 'noopener'
+    link.style.display = 'none'
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => {
+      window.URL.revokeObjectURL(url)
+    }, 1500)
+    showNotice('Файл подготовлен. Если скачивание не началось — откройте результат и скопируйте текст.', 'info')
+  } catch {
+    openResultViewer()
+    showNotice('Не удалось скачать файл в этом браузере. Открыл результат для просмотра.', 'warn')
+  }
+}
+
+function openResultViewer() {
+  if (!selectedOrder.value || !currentResultText.value.trim()) {
+    return
+  }
+  screen.value = 'result-view'
+}
+
+async function copyCurrentResult() {
+  const text = currentResultText.value.trim()
+  if (!text) {
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    showNotice('Результат скопирован в буфер обмена.', 'success')
+  } catch {
+    showNotice('Не удалось скопировать автоматически. Выделите текст и скопируйте вручную.', 'warn')
+  }
 }
 
 const menuRows = [
@@ -751,6 +782,7 @@ onMounted(() => {
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
         <pre v-if="selectedOrder.result_text" class="result-block">{{ selectedOrder.result_text }}</pre>
         <div v-if="selectedOrder.result_text" class="row">
+          <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
           <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
         </div>
 
@@ -801,6 +833,16 @@ onMounted(() => {
         <div class="row">
           <button class="btn btn-primary" :disabled="busy" @click="submitRevision">Отправить правку</button>
           <button class="btn btn-ghost" :disabled="busy" @click="screen = 'order-details'">Назад</button>
+        </div>
+      </div>
+
+      <div v-else-if="screen === 'result-view' && selectedOrder" class="stack">
+        <h2>Результат заказа</h2>
+        <pre class="result-block result-viewer">{{ currentResultText }}</pre>
+        <div class="row">
+          <button class="btn btn-primary" @click="copyCurrentResult">Скопировать текст</button>
+          <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
+          <button class="btn btn-ghost" @click="screen = 'order-details'">Назад к заказу</button>
         </div>
       </div>
 

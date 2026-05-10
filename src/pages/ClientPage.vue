@@ -568,9 +568,15 @@ function submitFeedback() {
 async function saveResultFile(blob, filename) {
   const nav = window.navigator
   const lowerName = String(filename || '').toLowerCase()
-  const ext = lowerName.endsWith('.pdf') ? '.pdf' : lowerName.endsWith('.doc') ? '.doc' : '.txt'
-  const mime = blob?.type || (ext === '.pdf' ? 'application/pdf' : ext === '.doc' ? 'application/msword' : 'text/plain')
-  const fileDescription = ext === '.pdf' ? 'PDF document' : ext === '.doc' ? 'Word document' : 'Text file'
+  const ext = lowerName.endsWith('.pdf') ? '.pdf' : lowerName.endsWith('.docx') ? '.docx' : '.txt'
+  const mime =
+    blob?.type ||
+    (ext === '.pdf'
+      ? 'application/pdf'
+      : ext === '.docx'
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : 'text/plain')
+  const fileDescription = ext === '.pdf' ? 'PDF document' : ext === '.docx' ? 'Word document' : 'Text file'
 
   // Modern desktop browsers with native file picker.
   if (window.showSaveFilePicker) {

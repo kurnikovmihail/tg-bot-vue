@@ -339,31 +339,25 @@ export function resolveOrderInput(rawValue) {
   return orders.find((order) => publicOrderNo(Number(order.id), Number(order.user_id)).toUpperCase() === normalized) || null
 }
 
-function escapeHtml(text) {
-  return String(text || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
+async function buildWordDocumentBlob(safeText) {
+  const { Document, Packer, Paragraph, TextRun } = await import('docx')
+  const lines = String(safeText || '').split('\n')
+  const children = lines.map((line) => {
+    const text = line.length ? line : ' '
+    return new Paragraph({
+      children: [new TextRun(text)]
+    })
+  })
 
-function buildWordDocumentBlob(safeText) {
-  const htmlBody = escapeHtml(safeText).replaceAll('\n', '<br>')
-  const html = [
-    '<!DOCTYPE html>',
-    '<html>',
-    '<head>',
-    '<meta charset="utf-8">',
-    '<title>Документ</title>',
-    '<style>body{font-family:Calibri,Arial,sans-serif;font-size:12pt;line-height:1.4;}h1{font-size:16pt;}</style>',
-    '</head>',
-    '<body>',
-    htmlBody,
-    '</body>',
-    '</html>'
-  ].join('')
-  const utf8Bom = '\uFEFF'
-  return new Blob([utf8Bom, html], { type: 'application/msword;charset=utf-8' })
+  const doc = new Document({
+    sections: [
+      {
+        children
+      }
+    ]
+  })
+
+  return Packer.toBlob(doc)
 }
 
 async function buildPresentationPdfBlob(safeText) {
@@ -407,8 +401,8 @@ export async function exportOrderResultAsFile(order) {
     return { blob, filename: `${base}.pdf` }
   }
 
-  const blob = buildWordDocumentBlob(safeText)
-  return { blob, filename: `${base}.doc` }
+  const blob = await buildWordDocumentBlob(safeText)
+  return { blob, filename: `${base}.docx` }
 }
 
 export function clearAllOrders() {

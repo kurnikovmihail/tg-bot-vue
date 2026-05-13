@@ -1,8 +1,17 @@
 const ACTIVE_USER_KEY = 'mgdi_active_user_id'
-export const ADMIN_USER_ID = 778130
+const ADMIN_ACCESS_KEY = 'mgdi_admin_access'
+const ADMIN_PASSWORD = '205813'
 
-export function isAdminUser(userId) {
-  return Number(userId) === ADMIN_USER_ID
+export function isAdminAccessGranted() {
+  return window.localStorage.getItem(ADMIN_ACCESS_KEY) === '1'
+}
+
+export function grantAdminAccessByPassword(password) {
+  if (String(password ?? '').trim() !== ADMIN_PASSWORD) {
+    return false
+  }
+  window.localStorage.setItem(ADMIN_ACCESS_KEY, '1')
+  return true
 }
 
 export function getOrCreateActiveUserId() {

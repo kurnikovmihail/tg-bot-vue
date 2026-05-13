@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { buildAdminReport } from '../core/adminReport'
 import { APP_CONFIG, buildLlmPayload, getEffectiveLlmTransport, pingLlm } from '../core/generator'
-import { getOrCreateActiveUserId, isAdminUser } from '../core/session'
+import { isAdminAccessGranted } from '../core/session'
 import { publicOrderNo } from '../core/orderNumbers'
 import { clearAllOrders, listRecentOrders, resolveOrderInput } from '../core/storage'
 import { STATUS_LABELS } from '../core/catalog'
@@ -118,8 +118,7 @@ async function checkLlmConnection() {
 }
 
 onMounted(() => {
-  const currentUserId = getOrCreateActiveUserId()
-  if (!isAdminUser(currentUserId)) {
+  if (!isAdminAccessGranted()) {
     router.replace({ path: '/', query: { adminDenied: '1' } })
     return
   }

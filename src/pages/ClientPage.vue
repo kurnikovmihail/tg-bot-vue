@@ -15,7 +15,7 @@ import {
 import { APP_CONFIG, applyRevision, generateInitial } from '../core/generator'
 import { publicOrderNo } from '../core/orderNumbers'
 import { calculateOrderPrice, hasVolumePricing } from '../core/pricing'
-import { ADMIN_USER_ID, getOrCreateActiveUserId, isAdminUser } from '../core/session'
+import { getOrCreateActiveUserId } from '../core/session'
 import {
   applyRevisionResult,
   cancelOrder,
@@ -94,8 +94,6 @@ const serviceItems = computed(() =>
     }
   })
 )
-
-const canOpenAdmin = computed(() => isAdminUser(activeUserId.value))
 
 const selectedOffer = computed(() => (selectedServiceKey.value ? getOffer(selectedServiceKey.value) : null))
 
@@ -693,7 +691,7 @@ function handleMenuAction(action) {
 onMounted(() => {
   activeUserId.value = getOrCreateActiveUserId()
   if (route.query.adminDenied === '1') {
-    showNotice(`Доступ к админке разрешен только пользователю ${ADMIN_USER_ID}.`, 'warn')
+    showNotice('Неверный пароль для входа в админку.', 'warn')
     const nextQuery = { ...route.query }
     delete nextQuery.adminDenied
     router.replace({ path: '/', query: nextQuery })
@@ -713,7 +711,7 @@ onMounted(() => {
       </div>
       <div class="header-meta">
         <p>Клиент: <strong>{{ activeUserId }}</strong></p>
-        <RouterLink v-if="canOpenAdmin" class="btn btn-ghost" to="/admin">Админка</RouterLink>
+        <RouterLink class="btn btn-ghost" to="/admin">Админка</RouterLink>
       </div>
     </header>
 

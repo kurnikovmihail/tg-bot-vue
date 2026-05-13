@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminPage from '../pages/AdminPage.vue'
 import ClientPage from '../pages/ClientPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
-import { getOrCreateActiveUserId, isAdminUser } from '../core/session'
+import { grantAdminAccessByPassword, isAdminAccessGranted } from '../core/session'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,8 +13,14 @@ const router = createRouter({
       name: 'admin',
       component: AdminPage,
       beforeEnter() {
-        const userId = getOrCreateActiveUserId()
-        if (!isAdminUser(userId)) {
+        if (isAdminAccessGranted()) {
+          return true
+        }
+        const password = window.prompt('Введите пароль для входа в админку:')
+        if (password && grantAdminAccessByPassword(password)) {
+          return true
+        }
+        if (!isAdminAccessGranted()) {
           return { path: '/', query: { adminDenied: '1' } }
         }
         return true

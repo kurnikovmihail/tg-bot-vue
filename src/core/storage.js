@@ -397,7 +397,7 @@ function extractCandidateJsonBlocks(text) {
     return []
   }
   const candidates = [source]
-  const fencedBlockRegex = /```(?:llm_file|json)?\s*([\s\S]*?)```/gi
+  const fencedBlockRegex = /```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```/gi
   let match
   while ((match = fencedBlockRegex.exec(source)) !== null) {
     const body = String(match[1] || '')
@@ -408,13 +408,33 @@ function extractCandidateJsonBlocks(text) {
   return candidates
 }
 
+function parseJsonLoose(block) {
+  const raw = String(block || '').trim()
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    const firstBrace = raw.indexOf('{')
+    const lastBrace = raw.lastIndexOf('}')
+    if (firstBrace < 0 || lastBrace <= firstBrace) {
+      return null
+    }
+    const jsonSlice = raw.slice(firstBrace, lastBrace + 1).trim()
+    try {
+      return JSON.parse(jsonSlice)
+    } catch {
+      return null
+    }
+  }
+}
+
 function parseEmbeddedLlmFile(resultText) {
   const blocks = extractCandidateJsonBlocks(resultText)
   for (const block of blocks) {
-    let parsed
-    try {
-      parsed = JSON.parse(block)
-    } catch {
+    const parsed = parseJsonLoose(block)
+    if (!parsed) {
       continue
     }
 

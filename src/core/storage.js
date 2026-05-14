@@ -341,7 +341,11 @@ export function resolveOrderInput(rawValue) {
 
 
 function decodeBase64ToBytes(base64Text) {
-  const cleaned = String(base64Text || '').replace(/\s+/g, '')
+  let cleaned = String(base64Text || '').replace(/\s+/g, '')
+  cleaned = cleaned.replace(/-/g, '+').replace(/_/g, '/')
+  while (cleaned.length % 4 !== 0) {
+    cleaned += '='
+  }
   const binary = window.atob(cleaned)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i += 1) {
@@ -373,6 +377,23 @@ function fallbackFilenameByMime(baseName, mimeType) {
     return `${baseName}.doc`
   }
   return `${baseName}.bin`
+}
+
+function inferMimeTypeByFilename(filename) {
+  const name = String(filename || '').toLowerCase()
+  if (name.endsWith('.pdf')) {
+    return 'application/pdf'
+  }
+  if (name.endsWith('.pptx')) {
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  }
+  if (name.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  }
+  if (name.endsWith('.doc')) {
+    return 'application/msword'
+  }
+  return ''
 }
 
 function extractCandidateJsonBlocks(text) {
@@ -428,6 +449,7 @@ function parseEmbeddedLlmFile(resultText, fallbackBaseName) {
     if (!payloadBase64) {
       continue
     }
+    mimeType = mimeType || inferMimeTypeByFilename(parsed.filename)
 
     let bytes
     try {

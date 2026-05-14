@@ -184,6 +184,28 @@ function estimateBase64Size(base64Value) {
   return Math.max(0, Math.floor((clean.length * 3) / 4) - pad)
 }
 
+function normalizeBase64(base64Value) {
+  let clean = String(base64Value || '').replace(/\s+/g, '')
+  clean = clean.replace(/-/g, '+').replace(/_/g, '/')
+  while (clean.length % 4 !== 0) {
+    clean += '='
+  }
+  return clean
+}
+
+function canDecodeBase64(base64Value) {
+  const normalized = normalizeBase64(base64Value)
+  if (!normalized) {
+    return false
+  }
+  try {
+    atob(normalized)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function isValidFilePayload(text) {
   const source = String(text || '').trim()
   if (!source) {
@@ -210,6 +232,9 @@ function isValidFilePayload(text) {
       const mimeType = String(parsed.mimeType || '').trim()
       const base64 = String(parsed.base64 || parsed.contentBase64 || '').trim()
       if (type !== 'file' || !mimeType || !base64) {
+        continue
+      }
+      if (!canDecodeBase64(base64)) {
         continue
       }
       const bytes = estimateBase64Size(base64)

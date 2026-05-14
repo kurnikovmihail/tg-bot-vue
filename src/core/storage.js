@@ -361,6 +361,36 @@ function decodeBase64ToBytes(base64Text) {
   return bytes
 }
 
+function getFilenameFromUrl(url, fallback = 'work_file') {
+  try {
+    const parsed = new URL(String(url || ''))
+    const last = decodeURIComponent(parsed.pathname.split('/').pop() || '').trim()
+    return sanitizeFilename(last, fallback)
+  } catch {
+    return sanitizeFilename('', fallback)
+  }
+}
+
+function pickRemoteFileUrl(text) {
+  const source = String(text || '')
+  const markdownMatch = source.match(/\[[^\]]*]\((https?:\/\/[^\s)]+)\)/i)
+  if (markdownMatch?.[1]) {
+    return markdownMatch[1]
+  }
+  const directMatch = source.match(/https?:\/\/[^\s"'`<>]+/i)
+  return directMatch?.[0] || ''
+}
+
+async function fetchRemoteFile(url, fallbackName = 'work_file') {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Remote file download failed: ${response.status}`)
+  }
+  const blob = await response.blob()
+  const filename = getFilenameFromUrl(url, fallbackName)
+  return { blob, filename }
+}
+
 function extractCandidateJsonBlocks(text) {
   const source = String(text || '')
   if (!source.trim()) {
@@ -392,22 +422,20 @@ function parseEmbeddedLlmFile(resultText) {
       continue
     }
 
-    const type = String(parsed.type || '').toLowerCase()
-    const base64 = String(parsed.base64 || parsed.contentBase64 || '').trim()
-    const dataUrl = String(parsed.dataUrl || '').trim()
-    if (type !== 'file' || (!base64 && !dataUrl)) {
+    const base64 = String(parsed.base64 || parsed.contentBase64 || parsed.content || '').trim()
+    const dataUrl = String(parsed.dataUrl || parsed.url || '').trim()
+    if (!base64 && !dataUrl) {
       continue
     }
 
-    let mimeType = String(parsed.mimeType || '').trim()
+    let mimeType = String(parsed.mimeType || parsed.contentType || '').trim()
     let payloadBase64 = base64
     if (dataUrl && !payloadBase64) {
       const dataUrlMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/i)
-      if (!dataUrlMatch) {
-        continue
+      if (dataUrlMatch) {
+        mimeType = mimeType || String(dataUrlMatch[1] || '').trim()
+        payloadBase64 = String(dataUrlMatch[2] || '').trim()
       }
-      mimeType = mimeType || String(dataUrlMatch[1] || '').trim()
-      payloadBase64 = String(dataUrlMatch[2] || '').trim()
     }
 
     if (!payloadBase64) {
@@ -426,7 +454,7 @@ function parseEmbeddedLlmFile(resultText) {
       : mimeType.includes('application/pdf')
         ? 'work.pdf'
         : 'work.docx'
-    const filename = sanitizeFilename(parsed.filename, fallbackName)
+    const filename = sanitizeFilename(parsed.filename || parsed.name, fallbackName)
     const blob = new Blob([bytes], {
       type: mimeType || 'application/octet-stream'
     })
@@ -441,7 +469,17 @@ export async function exportOrderResultAsFile(order) {
   if (embeddedFile) {
     return embeddedFile
   }
-  throw new Error('Нейросеть не прислала готовый файл. Обратитесь в поддержку.')
+  const remoteUrl = pickRemoteFileUrl(safeText)
+  if (remoteUrl) {
+    try {
+      return await fetchRemoteFile(remoteUrl, sanitizeFilename(`order_${order?.id || 'result'}_file`, 'order_result_file'))
+    } catch {
+      // Ignore and fall back to raw text file.
+    }
+  }
+  const fallbackBlob = new Blob([safeText], { type: 'text/plain;charset=utf-8' })
+  const fallbackFilename = sanitizeFilename(`order_${order?.id || 'result'}_raw.txt`, 'order_result_raw.txt')
+  return { blob: fallbackBlob, filename: fallbackFilename }
 }
 
 export function inspectOrderResult(order) {
@@ -478,3 +516,4 @@ export function saveFeedback(entry) {
   })
   saveJson(FEEDBACK_KEY, list)
 }
+

@@ -144,7 +144,7 @@ const revisionRemaining = computed(() => {
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
 const currentResultRaw = computed(() => String(selectedOrder.value?.result_text || ''))
 const hasResultText = computed(() => currentResultRaw.value.length > 0)
-const currentResultText = computed(() => currentResultRaw.value)
+const currentResultText = computed(() => String(resultPreview.text || ''))
 const resultPreview = reactive({
   status: 'idle',
   kind: 'none',
@@ -950,7 +950,7 @@ onMounted(() => {
           <p v-else-if="resultPreview.kind === 'file'" class="muted">
             Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
           </p>
-          <pre v-else class="result-viewer">{{ currentResultText }}</pre>
+          <pre v-else class="result-viewer">{{ resultPreview.text }}</pre>
           <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
         </div>
         <div v-if="hasResultText" class="row">
@@ -1025,7 +1025,7 @@ onMounted(() => {
           <p v-else-if="resultPreview.kind === 'file'" class="muted">
             Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
           </p>
-          <pre v-else class="result-viewer">{{ currentResultText }}</pre>
+          <pre v-else class="result-viewer">{{ resultPreview.text }}</pre>
           <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
         </div>
         <div class="row">

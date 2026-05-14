@@ -71,7 +71,8 @@ export async function generateInitial(order) {
   ensureLlmConfigured()
   await sleep(APP_CONFIG.requestDelayMs)
   const prompt = buildLlmPayload(order)
-  return callLlm({
+  return requestFilePayloadFromLlm({
+    order,
     systemPrompt: buildLlmSystemPrompt(order, 'initial'),
     userPrompt: prompt,
     maxTokens: 7000
@@ -94,7 +95,8 @@ export async function applyRevision(order, requestText) {
     'Обнови работу целиком с учетом запроса правки.'
   ].join('\n')
 
-  return callLlm({
+  return requestFilePayloadFromLlm({
+    order,
     systemPrompt: buildLlmSystemPrompt(order, 'revision'),
     userPrompt,
     maxTokens: 7000
@@ -168,6 +170,90 @@ export function buildLlmPayload(order) {
     'client requirements:',
     reqLines || '- no data'
   ].join('\n')
+}
+
+
+const MAX_INLINE_FILE_BYTES = 30 * 1024 * 1024
+
+function estimateBase64Size(base64Value) {
+  const clean = String(base64Value || '').replace(/\s+/g, '')
+  if (!clean) {
+    return 0
+  }
+  const pad = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0
+  return Math.max(0, Math.floor((clean.length * 3) / 4) - pad)
+}
+
+function isValidFilePayload(text) {
+  const source = String(text || '').trim()
+  if (!source) {
+    return false
+  }
+
+  const candidates = [source]
+  const fencedBlockRegex = /```(?:llm_file|json)?\s*([\s\S]*?)```/gi
+  let match
+  while ((match = fencedBlockRegex.exec(source)) !== null) {
+    const body = String(match[1] || '').trim()
+    if (body) {
+      candidates.push(body)
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (!parsed || typeof parsed !== 'object') {
+        continue
+      }
+      const type = String(parsed.type || '').toLowerCase()
+      const mimeType = String(parsed.mimeType || '').trim()
+      const base64 = String(parsed.base64 || parsed.contentBase64 || '').trim()
+      if (type !== 'file' || !mimeType || !base64) {
+        continue
+      }
+      const bytes = estimateBase64Size(base64)
+      if (!bytes || bytes > MAX_INLINE_FILE_BYTES) {
+        continue
+      }
+      return true
+    } catch {
+      continue
+    }
+  }
+
+  return false
+}
+
+async function requestFilePayloadFromLlm({ order, systemPrompt, userPrompt, maxTokens }) {
+  const maxAttempts = 3
+  let prompt = userPrompt
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const text = await callLlm({
+      systemPrompt,
+      userPrompt: prompt,
+      maxTokens
+    })
+    if (isValidFilePayload(text)) {
+      return text
+    }
+
+    if (attempt < maxAttempts) {
+      const serviceType = String(order?.service_type || 'unknown')
+      prompt = [
+        userPrompt,
+        '',
+        'Repair attempt ' + attempt + ' for service type: ' + serviceType + '.',
+        'Your previous answer did not match required llm_file JSON format or contained invalid base64.',
+        'Return ONLY one fenced llm_file JSON block with a valid base64 file payload.',
+        'Do not add any additional text.'
+      ].join('\n')
+      await sleep(Math.max(400, Math.round(APP_CONFIG.requestDelayMs * 0.5)))
+    }
+  }
+
+  throw new Error('LLM returned invalid file payload. Please contact support.')
 }
 
 function buildRequirementLines(order, req) {

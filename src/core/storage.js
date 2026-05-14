@@ -13,7 +13,6 @@ const ORDERS_KEY = 'mgdi_orders_v2'
 const REVISIONS_KEY = 'mgdi_revisions_v2'
 const META_KEY = 'mgdi_meta_v2'
 const FEEDBACK_KEY = 'mgdi_feedback_v1'
-const MAX_INLINE_FILE_BYTES = 30 * 1024 * 1024
 
 function nowIso() {
   return new Date().toISOString()
@@ -340,6 +339,14 @@ export function resolveOrderInput(rawValue) {
 }
 
 
+function sanitizeFilename(value, fallbackName) {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return fallbackName
+  }
+  return raw.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || fallbackName
+}
+
 function decodeBase64ToBytes(base64Text) {
   let cleaned = String(base64Text || '').replace(/\s+/g, '')
   cleaned = cleaned.replace(/-/g, '+').replace(/_/g, '/')
@@ -354,67 +361,24 @@ function decodeBase64ToBytes(base64Text) {
   return bytes
 }
 
-function sanitizeFilename(value, fallbackName) {
-  const raw = String(value || '').trim()
-  if (!raw) {
-    return fallbackName
-  }
-  return raw.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || fallbackName
-}
-
-function fallbackFilenameByMime(baseName, mimeType) {
-  const mime = String(mimeType || '').toLowerCase()
-  if (mime.includes('presentationml')) {
-    return `${baseName}.pptx`
-  }
-  if (mime.includes('application/pdf')) {
-    return `${baseName}.pdf`
-  }
-  if (mime.includes('officedocument.wordprocessingml.document')) {
-    return `${baseName}.docx`
-  }
-  if (mime.includes('application/msword')) {
-    return `${baseName}.doc`
-  }
-  return `${baseName}.bin`
-}
-
-function inferMimeTypeByFilename(filename) {
-  const name = String(filename || '').toLowerCase()
-  if (name.endsWith('.pdf')) {
-    return 'application/pdf'
-  }
-  if (name.endsWith('.pptx')) {
-    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  }
-  if (name.endsWith('.docx')) {
-    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  }
-  if (name.endsWith('.doc')) {
-    return 'application/msword'
-  }
-  return ''
-}
-
 function extractCandidateJsonBlocks(text) {
-  const source = String(text || '').trim()
-  if (!source) {
+  const source = String(text || '')
+  if (!source.trim()) {
     return []
   }
-
   const candidates = [source]
   const fencedBlockRegex = /```(?:llm_file|json)?\s*([\s\S]*?)```/gi
   let match
   while ((match = fencedBlockRegex.exec(source)) !== null) {
-    const body = String(match[1] || '').trim()
-    if (body) {
+    const body = String(match[1] || '')
+    if (body.trim()) {
       candidates.push(body)
     }
   }
   return candidates
 }
 
-function parseEmbeddedLlmFile(resultText, fallbackBaseName) {
+function parseEmbeddedLlmFile(resultText) {
   const blocks = extractCandidateJsonBlocks(resultText)
   for (const block of blocks) {
     let parsed
@@ -449,7 +413,6 @@ function parseEmbeddedLlmFile(resultText, fallbackBaseName) {
     if (!payloadBase64) {
       continue
     }
-    mimeType = mimeType || inferMimeTypeByFilename(parsed.filename)
 
     let bytes
     try {
@@ -457,30 +420,28 @@ function parseEmbeddedLlmFile(resultText, fallbackBaseName) {
     } catch {
       continue
     }
-    if (!bytes?.byteLength || bytes.byteLength > MAX_INLINE_FILE_BYTES) {
-      continue
-    }
 
-    const fallbackName = fallbackFilenameByMime(fallbackBaseName, mimeType)
+    const fallbackName = mimeType.includes('presentationml')
+      ? 'work.pptx'
+      : mimeType.includes('application/pdf')
+        ? 'work.pdf'
+        : 'work.docx'
     const filename = sanitizeFilename(parsed.filename, fallbackName)
     const blob = new Blob([bytes], {
       type: mimeType || 'application/octet-stream'
     })
     return { blob, filename }
   }
-
   return null
 }
 
 export async function exportOrderResultAsFile(order) {
-  const safeText = String(order?.result_text || '').trim()
-  const base = `order_${order.id}_v${order.result_version}`
-  const embeddedFile = parseEmbeddedLlmFile(safeText, base)
+  const safeText = String(order?.result_text || '')
+  const embeddedFile = parseEmbeddedLlmFile(safeText)
   if (embeddedFile) {
     return embeddedFile
   }
-
-  throw new Error('LLM did not return a valid file payload. Please contact support.')
+  throw new Error('Нейросеть не прислала готовый файл. Обратитесь в поддержку.')
 }
 
 export function clearAllOrders() {

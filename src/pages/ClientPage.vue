@@ -141,17 +141,8 @@ const revisionRemaining = computed(() => {
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
 const currentResultRaw = computed(() => String(selectedOrder.value?.result_text || '').trim())
-const hasResultPayload = computed(() => currentResultRaw.value.length > 0)
-const currentResultText = computed(() => {
-  const raw = currentResultRaw.value
-  if (!raw) {
-    return ''
-  }
-  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
-    return 'Файл сформирован. Используйте кнопку скачивания.'
-  }
-  return raw
-})
+const hasResultText = computed(() => currentResultRaw.value.length > 0)
+const currentResultText = computed(() => currentResultRaw.value)
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -577,15 +568,34 @@ function submitFeedback() {
 async function saveResultFile(blob, filename) {
   const nav = window.navigator
   const lowerName = String(filename || '').toLowerCase()
-  const ext = lowerName.endsWith('.pdf') ? '.pdf' : lowerName.endsWith('.docx') ? '.docx' : '.txt'
-  const mime =
-    blob?.type ||
-    (ext === '.pdf'
+  const ext = lowerName.endsWith('.pdf')
+    ? '.pdf'
+    : lowerName.endsWith('.docx')
+      ? '.docx'
+      : lowerName.endsWith('.doc')
+        ? '.doc'
+        : lowerName.endsWith('.pptx')
+          ? '.pptx'
+          : '.txt'
+  const mime = blob?.type || (
+    ext === '.pdf'
       ? 'application/pdf'
       : ext === '.docx'
         ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        : 'text/plain')
-  const fileDescription = ext === '.pdf' ? 'PDF document' : ext === '.docx' ? 'Word document' : 'Text file'
+        : ext === '.doc'
+          ? 'application/msword'
+          : ext === '.pptx'
+            ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            : 'text/plain;charset=utf-8'
+  )
+  const fileDescription =
+    ext === '.pdf'
+      ? 'PDF document'
+      : ext === '.docx' || ext === '.doc'
+        ? 'Word document'
+        : ext === '.pptx'
+          ? 'PowerPoint presentation'
+          : 'Text file'
 
   // Modern desktop browsers with native file picker.
   if (window.showSaveFilePicker) {
@@ -632,7 +642,7 @@ async function saveResultFile(blob, filename) {
 }
 
 async function downloadCurrentResult() {
-  if (!selectedOrder.value || !hasResultPayload.value) {
+  if (!selectedOrder.value || !hasResultText.value) {
     return
   }
   try {
@@ -654,7 +664,7 @@ async function downloadCurrentResult() {
 }
 
 function openResultViewer() {
-  if (!selectedOrder.value || !hasResultPayload.value) {
+  if (!selectedOrder.value || !hasResultText.value) {
     return
   }
   screen.value = 'result-view'
@@ -844,8 +854,8 @@ onMounted(() => {
 
       <div v-else-if="screen === 'order-details' && selectedOrder" class="stack">
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
-        <pre v-if="hasResultPayload" class="result-block">{{ currentResultText }}</pre>
-        <div v-if="hasResultPayload" class="row">
+        <pre v-if="hasResultText" class="result-block">{{ currentResultText }}</pre>
+        <div v-if="hasResultText" class="row">
           <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
           <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
         </div>
@@ -931,3 +941,5 @@ onMounted(() => {
     </section>
   </main>
 </template>
+
+

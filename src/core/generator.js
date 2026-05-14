@@ -1,4 +1,4 @@
-import { SERVICE_PRESENTATION, SERVICE_REFERAT, SERVICE_REPORT, getOffer } from './catalog'
+import { SERVICE_PRESENTATION, getOffer } from './catalog'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {}
 
@@ -71,7 +71,7 @@ export async function generateInitial(order) {
   ensureLlmConfigured()
   await sleep(APP_CONFIG.requestDelayMs)
   const prompt = buildLlmPayload(order)
-  return requestFilePayloadFromLlm({
+  return callLlm({
     order,
     systemPrompt: buildLlmSystemPrompt(order, 'initial'),
     userPrompt: prompt,
@@ -95,7 +95,7 @@ export async function applyRevision(order, requestText) {
     'Обнови работу целиком с учетом запроса правки.'
   ].join('\n')
 
-  return requestFilePayloadFromLlm({
+  return callLlm({
     order,
     systemPrompt: buildLlmSystemPrompt(order, 'revision'),
     userPrompt,
@@ -108,42 +108,7 @@ function summarizePreviousResult(value) {
   if (!raw) {
     return ''
   }
-  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
-    return '[previous result is a file payload and is omitted here]'
-  }
   return raw.length > 5000 ? `${raw.slice(0, 5000)}...` : raw
-}
-
-function buildFileContract(order) {
-  const isPresentation = order?.service_type === SERVICE_PRESENTATION
-  const isWordPriority = order?.service_type === SERVICE_REFERAT || order?.service_type === SERVICE_REPORT
-
-  const preferred = isPresentation
-    ? { filename: 'presentation.pdf', mimeType: 'application/pdf' }
-    : isWordPriority
-      ? { filename: 'work.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-      : { filename: 'work.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-
-  const fallback = isPresentation
-    ? { filename: 'presentation.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
-    : isWordPriority
-      ? { filename: 'work.doc', mimeType: 'application/msword' }
-      : { filename: 'work.pdf', mimeType: 'application/pdf' }
-
-  return [
-    'File pipeline contract (mandatory):',
-    '1. Preferred mode: return exactly one fenced JSON block named llm_file with base64 file.',
-    '2. Fallback mode: if preferred format is impossible, return one llm_file block in fallback format.',
-    '3. Do not return plain text answer when generating the final result.',
-    '',
-    'Required format:',
-    '```llm_file',
-    '{"type":"file","filename":"' + preferred.filename + '","mimeType":"' + preferred.mimeType + '","base64":"<BASE64_CONTENT>"}',
-    '```',
-    '',
-    'Fallback format: same JSON shape but filename/mimeType = ' + fallback.filename + ' / ' + fallback.mimeType + '.',
-    'No extra text before or after the fenced block.'
-  ].join('\n')
 }
 
 function buildLlmSystemPrompt(order, mode) {
@@ -151,14 +116,36 @@ function buildLlmSystemPrompt(order, mode) {
     mode === 'revision'
       ? 'Revise the existing completed work according to the client revision request.'
       : 'Generate the final completed work according to client requirements.'
+  const fileInstruction = buildOutputFileInstruction(order?.service_type)
 
   return [
     modeInstruction,
     'Always use the data from user prompt section "client requirements" as the source of truth.',
     'Keep output high-quality, factually accurate, and aligned with the assignment.',
     'Do not add hidden reasoning, drafts, service comments, or clarifying questions in final output.',
-    '',
-    buildFileContract(order)
+    fileInstruction
+  ].join('\n')
+}
+
+function buildOutputFileInstruction(serviceType) {
+  if (serviceType === SERVICE_PRESENTATION) {
+    return [
+      'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open presentation file.',
+      'Format:',
+      '```llm_file',
+      '{"type":"file","filename":"presentation.pptx","mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","base64":"<BASE64_CONTENT>"}',
+      '```',
+      'Do not return plain text. Do not add any extra text before or after the block.'
+    ].join('\n')
+  }
+
+  return [
+    'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open Word file.',
+    'Format:',
+    '```llm_file',
+    '{"type":"file","filename":"work.docx","mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","base64":"<BASE64_CONTENT>"}',
+    '```',
+    'Do not return plain text. Do not add any extra text before or after the block.'
   ].join('\n')
 }
 
@@ -170,115 +157,6 @@ export function buildLlmPayload(order) {
     'client requirements:',
     reqLines || '- no data'
   ].join('\n')
-}
-
-
-const MAX_INLINE_FILE_BYTES = 30 * 1024 * 1024
-
-function estimateBase64Size(base64Value) {
-  const clean = String(base64Value || '').replace(/\s+/g, '')
-  if (!clean) {
-    return 0
-  }
-  const pad = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0
-  return Math.max(0, Math.floor((clean.length * 3) / 4) - pad)
-}
-
-function normalizeBase64(base64Value) {
-  let clean = String(base64Value || '').replace(/\s+/g, '')
-  clean = clean.replace(/-/g, '+').replace(/_/g, '/')
-  while (clean.length % 4 !== 0) {
-    clean += '='
-  }
-  return clean
-}
-
-function canDecodeBase64(base64Value) {
-  const normalized = normalizeBase64(base64Value)
-  if (!normalized) {
-    return false
-  }
-  try {
-    atob(normalized)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function isValidFilePayload(text) {
-  const source = String(text || '').trim()
-  if (!source) {
-    return false
-  }
-
-  const candidates = [source]
-  const fencedBlockRegex = /```(?:llm_file|json)?\s*([\s\S]*?)```/gi
-  let match
-  while ((match = fencedBlockRegex.exec(source)) !== null) {
-    const body = String(match[1] || '').trim()
-    if (body) {
-      candidates.push(body)
-    }
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate)
-      if (!parsed || typeof parsed !== 'object') {
-        continue
-      }
-      const type = String(parsed.type || '').toLowerCase()
-      const mimeType = String(parsed.mimeType || '').trim()
-      const base64 = String(parsed.base64 || parsed.contentBase64 || '').trim()
-      if (type !== 'file' || !mimeType || !base64) {
-        continue
-      }
-      if (!canDecodeBase64(base64)) {
-        continue
-      }
-      const bytes = estimateBase64Size(base64)
-      if (!bytes || bytes > MAX_INLINE_FILE_BYTES) {
-        continue
-      }
-      return true
-    } catch {
-      continue
-    }
-  }
-
-  return false
-}
-
-async function requestFilePayloadFromLlm({ order, systemPrompt, userPrompt, maxTokens }) {
-  const maxAttempts = 3
-  let prompt = userPrompt
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const text = await callLlm({
-      systemPrompt,
-      userPrompt: prompt,
-      maxTokens
-    })
-    if (isValidFilePayload(text)) {
-      return text
-    }
-
-    if (attempt < maxAttempts) {
-      const serviceType = String(order?.service_type || 'unknown')
-      prompt = [
-        userPrompt,
-        '',
-        'Repair attempt ' + attempt + ' for service type: ' + serviceType + '.',
-        'Your previous answer did not match required llm_file JSON format or contained invalid base64.',
-        'Return ONLY one fenced llm_file JSON block with a valid base64 file payload.',
-        'Do not add any additional text.'
-      ].join('\n')
-      await sleep(Math.max(400, Math.round(APP_CONFIG.requestDelayMs * 0.5)))
-    }
-  }
-
-  throw new Error('LLM returned invalid file payload. Please contact support.')
 }
 
 function buildRequirementLines(order, req) {
@@ -503,8 +381,8 @@ function extractLlmText(data) {
 
 function firstNonEmptyText(values) {
   for (const value of values) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
+    if (typeof value === 'string' && value.length > 0) {
+      return value
     }
   }
   return ''
@@ -516,11 +394,11 @@ function extractTextFromUnknown(value) {
   }
 
   if (typeof value === 'string') {
-    return value.trim()
+    return value
   }
 
   if (Array.isArray(value)) {
-    const merged = value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('\n').trim()
+    const merged = value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('')
     return merged
   }
 

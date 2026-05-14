@@ -61,8 +61,8 @@ function extractLlmText(data) {
 
 function firstNonEmptyText(values) {
   for (const value of values) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
+    if (typeof value === 'string' && value.length > 0) {
+      return value
     }
   }
   return ''
@@ -74,11 +74,11 @@ function extractTextFromUnknown(value) {
   }
 
   if (typeof value === 'string') {
-    return value.trim()
+    return value
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('\n').trim()
+    return value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('')
   }
 
   if (typeof value === 'object') {
@@ -241,4 +241,3 @@ export default async function handler(req, res) {
     text
   })
 }
-

@@ -5,7 +5,6 @@ import {
   ORDER_STATUS_IN_PROGRESS,
   ORDER_STATUS_IN_REVISION,
   ORDER_STATUS_READY,
-  SERVICE_PRESENTATION,
   getOffer
 } from './catalog'
 import { publicOrderNo } from './orderNumbers'
@@ -14,6 +13,7 @@ const ORDERS_KEY = 'mgdi_orders_v2'
 const REVISIONS_KEY = 'mgdi_revisions_v2'
 const META_KEY = 'mgdi_meta_v2'
 const FEEDBACK_KEY = 'mgdi_feedback_v1'
+const MAX_INLINE_FILE_BYTES = 30 * 1024 * 1024
 
 function nowIso() {
   return new Date().toISOString()
@@ -339,70 +339,126 @@ export function resolveOrderInput(rawValue) {
   return orders.find((order) => publicOrderNo(Number(order.id), Number(order.user_id)).toUpperCase() === normalized) || null
 }
 
-async function buildWordDocumentBlob(safeText) {
-  const { Document, Packer, Paragraph, TextRun } = await import('docx')
-  const lines = String(safeText || '').split('\n')
-  const children = lines.map((line) => {
-    const text = line.length ? line : ' '
-    return new Paragraph({
-      children: [new TextRun(text)]
-    })
-  })
 
-  const doc = new Document({
-    sections: [
-      {
-        children
-      }
-    ]
-  })
-
-  return Packer.toBlob(doc)
+function decodeBase64ToBytes(base64Text) {
+  const cleaned = String(base64Text || '').replace(/\s+/g, '')
+  const binary = window.atob(cleaned)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
 }
 
-async function buildPresentationPdfBlob(safeText) {
-  const { jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const margin = 40
-  const top = 52
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const maxWidth = pageWidth - margin * 2
-  const lineHeight = 16
-  let cursorY = top
+function sanitizeFilename(value, fallbackName) {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return fallbackName
+  }
+  return raw.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120) || fallbackName
+}
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(12)
+function fallbackFilenameByMime(baseName, mimeType) {
+  const mime = String(mimeType || '').toLowerCase()
+  if (mime.includes('presentationml')) {
+    return `${baseName}.pptx`
+  }
+  if (mime.includes('application/pdf')) {
+    return `${baseName}.pdf`
+  }
+  if (mime.includes('officedocument.wordprocessingml.document')) {
+    return `${baseName}.docx`
+  }
+  if (mime.includes('application/msword')) {
+    return `${baseName}.doc`
+  }
+  return `${baseName}.bin`
+}
 
-  const rawLines = String(safeText || '').split('\n')
-  for (const rawLine of rawLines) {
-    const line = rawLine.trimEnd()
-    const parts = doc.splitTextToSize(line || ' ', maxWidth)
-    for (const part of parts) {
-      if (cursorY > pageHeight - margin) {
-        doc.addPage()
-        cursorY = top
-      }
-      doc.text(part, margin, cursorY)
-      cursorY += lineHeight
-    }
-    cursorY += 4
+function extractCandidateJsonBlocks(text) {
+  const source = String(text || '').trim()
+  if (!source) {
+    return []
   }
 
-  return doc.output('blob')
+  const candidates = [source]
+  const fencedBlockRegex = /```(?:llm_file|json)?\s*([\s\S]*?)```/gi
+  let match
+  while ((match = fencedBlockRegex.exec(source)) !== null) {
+    const body = String(match[1] || '').trim()
+    if (body) {
+      candidates.push(body)
+    }
+  }
+  return candidates
+}
+
+function parseEmbeddedLlmFile(resultText, fallbackBaseName) {
+  const blocks = extractCandidateJsonBlocks(resultText)
+  for (const block of blocks) {
+    let parsed
+    try {
+      parsed = JSON.parse(block)
+    } catch {
+      continue
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      continue
+    }
+
+    const type = String(parsed.type || '').toLowerCase()
+    const base64 = String(parsed.base64 || parsed.contentBase64 || '').trim()
+    const dataUrl = String(parsed.dataUrl || '').trim()
+    if (type !== 'file' || (!base64 && !dataUrl)) {
+      continue
+    }
+
+    let mimeType = String(parsed.mimeType || '').trim()
+    let payloadBase64 = base64
+    if (dataUrl && !payloadBase64) {
+      const dataUrlMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/i)
+      if (!dataUrlMatch) {
+        continue
+      }
+      mimeType = mimeType || String(dataUrlMatch[1] || '').trim()
+      payloadBase64 = String(dataUrlMatch[2] || '').trim()
+    }
+
+    if (!payloadBase64) {
+      continue
+    }
+
+    let bytes
+    try {
+      bytes = decodeBase64ToBytes(payloadBase64)
+    } catch {
+      continue
+    }
+    if (!bytes?.byteLength || bytes.byteLength > MAX_INLINE_FILE_BYTES) {
+      continue
+    }
+
+    const fallbackName = fallbackFilenameByMime(fallbackBaseName, mimeType)
+    const filename = sanitizeFilename(parsed.filename, fallbackName)
+    const blob = new Blob([bytes], {
+      type: mimeType || 'application/octet-stream'
+    })
+    return { blob, filename }
+  }
+
+  return null
 }
 
 export async function exportOrderResultAsFile(order) {
-  const safeText = String(order?.result_text || '').trim() || 'Результат временно пуст. Попробуйте запросить правку.'
+  const safeText = String(order?.result_text || '').trim()
   const base = `order_${order.id}_v${order.result_version}`
-
-  if (order?.service_type === SERVICE_PRESENTATION) {
-    const blob = await buildPresentationPdfBlob(safeText)
-    return { blob, filename: `${base}.pdf` }
+  const embeddedFile = parseEmbeddedLlmFile(safeText, base)
+  if (embeddedFile) {
+    return embeddedFile
   }
 
-  const blob = await buildWordDocumentBlob(safeText)
-  return { blob, filename: `${base}.docx` }
+  throw new Error('LLM did not return a valid file payload. Please contact support.')
 }
 
 export function clearAllOrders() {

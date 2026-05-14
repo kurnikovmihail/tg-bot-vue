@@ -140,7 +140,18 @@ const revisionRemaining = computed(() => {
 })
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
-const currentResultText = computed(() => String(selectedOrder.value?.result_text || '').trim())
+const currentResultRaw = computed(() => String(selectedOrder.value?.result_text || '').trim())
+const hasResultPayload = computed(() => currentResultRaw.value.length > 0)
+const currentResultText = computed(() => {
+  const raw = currentResultRaw.value
+  if (!raw) {
+    return ''
+  }
+  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
+    return 'Файл сформирован. Используйте кнопку скачивания.'
+  }
+  return raw
+})
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -421,8 +432,8 @@ async function runGenerationForOrder(order, options = {}) {
     }
     refreshMyOrders()
     screen.value = 'order-details'
-    const prefix = openedFromPayment ? 'после оплаты' : 'при повторной генерации'
-    showNotice(`❌ Ошибка генерации ${prefix}: ${details}`, 'error')
+    const prefix = openedFromPayment ? '\u043f\u043e\u0441\u043b\u0435 \u043e\u043f\u043b\u0430\u0442\u044b' : '\u043f\u0440\u0438 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e\u0439 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438'
+    showNotice(`\u274c \u041e\u0448\u0438\u0431\u043a\u0430 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 ${prefix}: ${details}. \u041e\u0431\u0440\u0430\u0442\u0438\u0442\u0435\u0441\u044c \u0432 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0443 \u0438 \u0441\u043e\u043e\u0431\u0449\u0438\u0442\u0435 \u043d\u043e\u043c\u0435\u0440 \u0437\u0430\u043a\u0430\u0437\u0430.`, 'error')
   } finally {
     busy.value = false
   }
@@ -621,7 +632,7 @@ async function saveResultFile(blob, filename) {
 }
 
 async function downloadCurrentResult() {
-  if (!selectedOrder.value || !currentResultText.value.trim()) {
+  if (!selectedOrder.value || !hasResultPayload.value) {
     return
   }
   try {
@@ -643,7 +654,7 @@ async function downloadCurrentResult() {
 }
 
 function openResultViewer() {
-  if (!selectedOrder.value || !currentResultText.value.trim()) {
+  if (!selectedOrder.value || !hasResultPayload.value) {
     return
   }
   screen.value = 'result-view'
@@ -832,8 +843,8 @@ onMounted(() => {
 
       <div v-else-if="screen === 'order-details' && selectedOrder" class="stack">
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
-        <pre v-if="selectedOrder.result_text" class="result-block">{{ selectedOrder.result_text }}</pre>
-        <div v-if="selectedOrder.result_text" class="row">
+        <pre v-if="hasResultPayload" class="result-block">{{ currentResultText }}</pre>
+        <div v-if="hasResultPayload" class="row">
           <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
           <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
         </div>

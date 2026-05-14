@@ -1,22 +1,16 @@
 import {
-  SERVICE_COURSEWORK,
   SERVICE_CUSTOM_WORK,
   SERVICE_ESSAY,
-  SERVICE_LAB_WORK,
   SERVICE_PRESENTATION,
   SERVICE_REFERAT,
-  SERVICE_RESEARCH_WORK,
   getOffer
 } from './catalog'
 
 export const VOLUME_PRICING_RULES = {
-  [SERVICE_REFERAT]: ['volume', 4, 4, 35, 120],
-  [SERVICE_PRESENTATION]: ['slides_count', 12, 6, 30, 80],
-  [SERVICE_ESSAY]: ['volume', 3, 1, 12, 140],
-  [SERVICE_COURSEWORK]: ['volume', 20, 20, 90, 110],
-  [SERVICE_RESEARCH_WORK]: ['volume', 10, 10, 70, 130],
-  [SERVICE_LAB_WORK]: ['volume', 2, 2, 25, 180],
-  [SERVICE_CUSTOM_WORK]: ['volume', 5, 1, 120, 100]
+  [SERVICE_REFERAT]: ['volume', 4, 4, 35, 40],
+  [SERVICE_PRESENTATION]: ['slides_count', 12, 6, 30, 26.67],
+  [SERVICE_ESSAY]: ['volume', 50, 1, 120, 46.67],
+  [SERVICE_CUSTOM_WORK]: ['volume', 5, 1, 120, 33.33]
 }
 
 export function hasVolumePricing(serviceKey) {
@@ -48,5 +42,6 @@ export function calculateOrderPrice(serviceKey, requirements) {
   }
   units = Math.max(minUnits, Math.min(maxUnits, units))
   const extraUnits = Math.max(0, units - includedUnits)
-  return basePrice + extraUnits * pricePerUnit
+  // Keep final prices in whole rubles for UI and stored orders.
+  return Math.round(basePrice + extraUnits * pricePerUnit)
 }

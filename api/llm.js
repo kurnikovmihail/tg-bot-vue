@@ -25,44 +25,91 @@ function sendJson(res, status, payload) {
 }
 
 function extractLlmText(data) {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-    return data.output_text.trim()
+  const directText = firstNonEmptyText([
+    data?.text,
+    data?.output_text,
+    data?.response?.output_text,
+    data?.message?.content
+  ])
+  if (directText) {
+    return directText
   }
 
   const firstChoice = data?.choices?.[0]?.message?.content
-  if (typeof firstChoice === 'string' && firstChoice.trim()) {
-    return firstChoice.trim()
+  const fromChoice = extractTextFromUnknown(firstChoice)
+  if (fromChoice) {
+    return fromChoice
   }
 
-  if (Array.isArray(firstChoice)) {
-    const merged = firstChoice
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part
-        }
-        if (typeof part?.text === 'string') {
-          return part.text
-        }
-        if (typeof part?.content === 'string') {
-          return part.content
-        }
-        return ''
-      })
-      .join('')
-      .trim()
-    if (merged) {
-      return merged
+  const fromChoicesArray = extractTextFromUnknown(data?.choices)
+  if (fromChoicesArray) {
+    return fromChoicesArray
+  }
+
+  const fromOutput = extractTextFromUnknown(data?.output)
+  if (fromOutput) {
+    return fromOutput
+  }
+
+  const fromMessages = extractTextFromUnknown(data?.messages)
+  if (fromMessages) {
+    return fromMessages
+  }
+
+  return ''
+}
+
+function firstNonEmptyText(values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
     }
   }
+  return ''
+}
 
-  if (Array.isArray(data?.output)) {
-    const fromOutput = data.output
-      .flatMap((item) => item?.content || [])
-      .map((contentItem) => contentItem?.text || '')
-      .join('')
-      .trim()
-    if (fromOutput) {
-      return fromOutput
+function extractTextFromUnknown(value) {
+  if (!value) {
+    return ''
+  }
+
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('\n').trim()
+  }
+
+  if (typeof value === 'object') {
+    const direct = firstNonEmptyText([
+      value.text,
+      value.content,
+      value.output_text,
+      value.message,
+      value.value,
+      value.arguments
+    ])
+    if (direct) {
+      return direct
+    }
+
+    const nested = [
+      value.message?.content,
+      value.delta,
+      value.output,
+      value.content,
+      value.parts,
+      value.items,
+      value.messages,
+      value.choices
+    ]
+
+    for (const item of nested) {
+      const text = extractTextFromUnknown(item)
+      if (text) {
+        return text
+      }
     }
   }
 

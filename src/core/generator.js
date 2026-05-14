@@ -1,4 +1,4 @@
-import { LLM_CHANNEL_RULE, LLM_GLOBAL_QUALITY_RULES, SERVICE_PRESENTATION, SERVICE_REFERAT, getOffer } from './catalog'
+import { SERVICE_PRESENTATION, SERVICE_REFERAT, SERVICE_REPORT, getOffer } from './catalog'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {}
 
@@ -83,7 +83,7 @@ export async function applyRevision(order, requestText) {
   await sleep(Math.max(500, Math.round(APP_CONFIG.requestDelayMs * 0.7)))
 
   const prompt = buildLlmPayload(order)
-  const previous = String(order.result_text || '').trim()
+  const previous = summarizePreviousResult(order.result_text)
   const userPrompt = [
     prompt,
     '',
@@ -101,124 +101,73 @@ export async function applyRevision(order, requestText) {
   })
 }
 
+function summarizePreviousResult(value) {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return ''
+  }
+  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
+    return '[previous result is a file payload and is omitted here]'
+  }
+  return raw.length > 5000 ? `${raw.slice(0, 5000)}...` : raw
+}
+
+function buildFileContract(order) {
+  const isPresentation = order?.service_type === SERVICE_PRESENTATION
+  const isWordPriority = order?.service_type === SERVICE_REFERAT || order?.service_type === SERVICE_REPORT
+
+  const preferred = isPresentation
+    ? { filename: 'presentation.pdf', mimeType: 'application/pdf' }
+    : isWordPriority
+      ? { filename: 'work.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+      : { filename: 'work.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+
+  const fallback = isPresentation
+    ? { filename: 'presentation.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
+    : isWordPriority
+      ? { filename: 'work.doc', mimeType: 'application/msword' }
+      : { filename: 'work.pdf', mimeType: 'application/pdf' }
+
+  return [
+    'File pipeline contract (mandatory):',
+    '1. Preferred mode: return exactly one fenced JSON block named llm_file with base64 file.',
+    '2. Fallback mode: if preferred format is impossible, return one llm_file block in fallback format.',
+    '3. Do not return plain text answer when generating the final result.',
+    '',
+    'Required format:',
+    '```llm_file',
+    '{"type":"file","filename":"' + preferred.filename + '","mimeType":"' + preferred.mimeType + '","base64":"<BASE64_CONTENT>"}',
+    '```',
+    '',
+    'Fallback format: same JSON shape but filename/mimeType = ' + fallback.filename + ' / ' + fallback.mimeType + '.',
+    'No extra text before or after the fenced block.'
+  ].join('\n')
+}
+
 function buildLlmSystemPrompt(order, mode) {
-  if (order?.service_type === SERVICE_REFERAT) {
-    return [
-      'Твоя задача — сделать мне реферат так, чтобы он выглядел как качественно выполненный студентом, соответствовал заданию, был логичным, аккуратно оформленным и не содержал фактических ошибок.',
-      'А так же сразу присылай готовый ворд документ, который откроется на любом устройстве, даже мобильном.',
-      '',
-      'В самой работе Формат ответа (обязательно):',
-      '- Выводи только финальный материал без пояснений, рассуждений и служебных фраз.',
-      '- Не добавляй префиксы вроде "Вот результат", "Ниже файл", "Комментарий".',
-      '- Не задавай встречных вопросов в финальном ответе.',
-      '',
-      'Всегда бери данные клиента из юзер промпта, раздел «Требования клиента», за основу и строго им следуй.',
-      '',
-      'Работай по следующим правилам:',
-      '',
-      '1. Сначала внимательно проанализируй тему, цель, задачи, формат работы и все требования.',
-      '2. Если я прикрепил методичку, образец, критерии, план, файл преподавателя или пример оформления — опирайся на них в первую очередь и никогда не уклоняйся от поставленных правил.',
-      '3. Ничего не придумывай как факт, если ты не уверен. В спорных местах:',
-      '- явно указывай, что момент требует проверки;',
-      '- не выдавай сомнительную информацию за точную.',
-      '4. Пиши не шаблонно, а естественно, связно и по-студенчески грамотно, но на хорошем уровне.',
-      '5. Избегай воды, тавтологии, слишком общих фраз и пустых абзацев.',
-      '6. Делай текст содержательным: с анализом, причинно-следственными связями, выводами и логическими переходами.',
-      '8. Если тема историческая, юридическая, экономическая, социальная или научная — уделяй особое внимание точности формулировок.',
-      '',
-      'Требования к качеству текста:',
-      '- логичная структура;',
-      '- академический, но живой язык;',
-      '- точные формулировки;',
-      '- отсутствие явных штампов нейросети;',
-      '- отсутствие противоречий между разделами;',
-      '- каждый раздел должен работать на общую цель;',
-      '- выводы должны вытекать из основного текста, а не быть формальными.',
-      '',
-      'Очень важно:',
-      '- не сокращай качество ради скорости;',
-      '- если формулировка темы неудачная — предложи 2-3 более сильных варианта;',
-      '- если требования неполные — сделай наиболее академически правильный вариант;',
-      '- если есть риск, что преподаватель заметит шаблонность, перепиши текст более естественно и убедительно.'
-    ].join('\n')
-  }
-  if (order?.service_type === SERVICE_PRESENTATION) {
-    return [
-      'Твоя задача — сделать мне презентацию так, чтобы она выглядела как качественно выполненная студентом, соответствовала заданию, была логичной, аккуратно оформленной и не содержала фактических ошибок. И сразу файлом пдф.',
-      '',
-      'Работу сразу делай файлом и сразу присылай файлом.',
-      '',
-      'Не добавляй рассуждения, скрытый ход мысли, черновики, пометки вида "как я думал", служебные комментарии и мета-объяснения.',
-      'Возвращай только финальный материал по задаче.',
-      ' Не добавляй префиксы вроде "Вот результат", "Ниже файл", "Комментарий".',
-      'Не задавай встречных вопросов в финальном ответе.',
-      '',
-      'Тип работы: presentation',
-      'Всегда бери данные клиента из юзер промпта, раздел «Требования клиента», за основу и строго им следуй.',
-      '',
-      'Работай по следующим правилам:',
-      '',
-      '1. Сначала внимательно проанализируй тему, цель, задачи, формат работы и все требования.',
-      '2. Если я прикрепил методичку, образец, критерии, план, файл преподавателя или пример оформления — опирайся на них в первую очередь и никогда не уклоняйся от поставленных правил.',
-      '3. Ничего не придумывай как факт, если ты не уверен. В спорных местах:',
-      '- явно указывай, что момент требует проверки;',
-      '- не выдавай сомнительную информацию за точную.',
-      '4. Пиши не шаблонно, а естественно, связно и по-студенчески грамотно, но на хорошем уровне.',
-      '6. Делай текст содержательным: с анализом, причинно-следственными связями, выводами и логическими переходами.',
-      '8. Если тема историческая, юридическая, экономическая, социальная или научная — уделяй особое внимание точности формулировок.',
-      '',
-      'Очень важно:',
-      '- не сокращай качество ради скорости;',
-      '- если формулировка темы неудачная — предложи 2-3 более сильных варианта;',
-      '- если требования неполные — сделай наиболее академически правильный вариант;',
-      '- если есть риск, что преподаватель заметит шаблонность, перепиши текст более естественно и убедительно.',
-      '',
-      'Когда отвечаешь:',
-      'только файлами, которые открываются на любом устройстве, включая мобильные (Android, iPhone и т.д.).'
-    ].join('\n')
-  }
-  if (mode === 'revision') {
-    return 'Обнови существующую учебную работу согласно запросу правки клиента.'
-  }
-  return 'Сгенерируй итоговую учебную работу по требованиям клиента.'
+  const modeInstruction =
+    mode === 'revision'
+      ? 'Revise the existing completed work according to the client revision request.'
+      : 'Generate the final completed work according to client requirements.'
+
+  return [
+    modeInstruction,
+    'Always use the data from user prompt section "client requirements" as the source of truth.',
+    'Keep output high-quality, factually accurate, and aligned with the assignment.',
+    'Do not add hidden reasoning, drafts, service comments, or clarifying questions in final output.',
+    '',
+    buildFileContract(order)
+  ].join('\n')
 }
 
 export function buildLlmPayload(order) {
   const req = order.frozen_requirements || {}
   const reqLines = buildRequirementLines(order, req)
-
-  if (order?.service_type === SERVICE_REFERAT) {
-    return [
-      'Тип работы: referat',
-      'Требования клиента:',
-      reqLines || '- Нет данных'
-    ].join('\n')
-  }
-  if (order?.service_type === SERVICE_PRESENTATION) {
-    return [
-      'Требования клиента:',
-      reqLines || '- Нет данных'
-    ].join('\n')
-  }
-
-  const commonOutputRule = [
-    'Формат ответа (обязательно):',
-    '- Выводи только финальный материал без пояснений, рассуждений и служебных фраз.',
-    '- Не добавляй префиксы вроде "Вот результат", "Ниже файл", "Комментарий".',
-    '- Не задавай встречных вопросов в финальном ответе.'
+  return [
+    'Service type: ' + order.service_type,
+    'client requirements:',
+    reqLines || '- no data'
   ].join('\n')
-
-  const presentationOutputRule =
-    order.service_type === 'presentation'
-      ? [
-          '',
-          'Дополнительное правило для презентации:',
-          '- Сформируй результат как готовый текст презентации по слайдам (Слайд 1, Слайд 2, ...),',
-          '- для каждого слайда: заголовок и 3-6 кратких пунктов, без лишних пояснений вне слайдов.'
-        ].join('\n')
-      : ''
-
-  return `${LLM_CHANNEL_RULE}\n\n${LLM_GLOBAL_QUALITY_RULES}\n\nТип работы: ${order.service_type}\nТребования клиента:\n${reqLines}\n\n${commonOutputRule}${presentationOutputRule}`
 }
 
 function buildRequirementLines(order, req) {
@@ -407,47 +356,92 @@ async function safeReadError(response) {
 }
 
 function extractLlmText(data) {
-  if (typeof data?.text === 'string' && data.text.trim()) {
-    return data.text.trim()
-  }
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-    return data.output_text.trim()
+  const directText = firstNonEmptyText([
+    data?.text,
+    data?.output_text,
+    data?.response?.output_text,
+    data?.message?.content
+  ])
+  if (directText) {
+    return directText
   }
 
   const firstChoice = data?.choices?.[0]?.message?.content
-  if (typeof firstChoice === 'string' && firstChoice.trim()) {
-    return firstChoice.trim()
+  const fromChoice = extractTextFromUnknown(firstChoice)
+  if (fromChoice) {
+    return fromChoice
   }
 
-  if (Array.isArray(firstChoice)) {
-    const merged = firstChoice
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part
-        }
-        if (typeof part?.text === 'string') {
-          return part.text
-        }
-        if (typeof part?.content === 'string') {
-          return part.content
-        }
-        return ''
-      })
-      .join('')
-      .trim()
-    if (merged) {
-      return merged
+  const fromChoicesArray = extractTextFromUnknown(data?.choices)
+  if (fromChoicesArray) {
+    return fromChoicesArray
+  }
+
+  const fromOutput = extractTextFromUnknown(data?.output)
+  if (fromOutput) {
+    return fromOutput
+  }
+
+  const fromMessages = extractTextFromUnknown(data?.messages)
+  if (fromMessages) {
+    return fromMessages
+  }
+
+  return ''
+}
+
+function firstNonEmptyText(values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
     }
   }
+  return ''
+}
 
-  if (Array.isArray(data?.output)) {
-    const fromOutput = data.output
-      .flatMap((item) => item?.content || [])
-      .map((contentItem) => contentItem?.text || '')
-      .join('')
-      .trim()
-    if (fromOutput) {
-      return fromOutput
+function extractTextFromUnknown(value) {
+  if (!value) {
+    return ''
+  }
+
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (Array.isArray(value)) {
+    const merged = value.map((item) => extractTextFromUnknown(item)).filter(Boolean).join('\n').trim()
+    return merged
+  }
+
+  if (typeof value === 'object') {
+    const direct = firstNonEmptyText([
+      value.text,
+      value.content,
+      value.output_text,
+      value.message,
+      value.value,
+      value.arguments
+    ])
+    if (direct) {
+      return direct
+    }
+
+    const nested = [
+      value.message?.content,
+      value.delta,
+      value.output,
+      value.content,
+      value.parts,
+      value.items,
+      value.messages,
+      value.choices
+    ]
+
+    for (const item of nested) {
+      const text = extractTextFromUnknown(item)
+      if (text) {
+        return text
+      }
     }
   }
 

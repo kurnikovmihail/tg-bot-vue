@@ -188,6 +188,23 @@ pre {
   min-height: 52vh;
 }
 
+.result-iframe {
+  width: 100%;
+  min-height: 62vh;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: white;
+}
+
+.docx-preview {
+  min-height: 52vh;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: white;
+  color: #111;
+  line-height: 1.55;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

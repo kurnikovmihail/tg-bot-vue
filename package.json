@@ -13,6 +13,7 @@
   "dependencies": {
     "docx": "^9.6.1",
     "jspdf": "^4.2.1",
+    "mammoth": "^1.8.0",
     "vue": "^3.5.30",
     "vue-router": "^4.6.4",
     "wicg-inert": "^3.1.3"

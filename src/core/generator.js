@@ -1,4 +1,4 @@
-import { SERVICE_PRESENTATION, getOffer } from './catalog'
+import { LLM_GLOBAL_QUALITY_RULES, SERVICE_PRESENTATION, getOffer } from './catalog'
 
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {}
 
@@ -108,6 +108,9 @@ function summarizePreviousResult(value) {
   if (!raw) {
     return ''
   }
+  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
+    return '[Previous version is a file payload and is omitted in revision prompt.]'
+  }
   return raw.length > 5000 ? `${raw.slice(0, 5000)}...` : raw
 }
 
@@ -119,6 +122,7 @@ function buildLlmSystemPrompt(order, mode) {
   const fileInstruction = buildOutputFileInstruction(order?.service_type)
 
   return [
+    LLM_GLOBAL_QUALITY_RULES,
     modeInstruction,
     'Always use the data from user prompt section "client requirements" as the source of truth.',
     'Keep output high-quality, factually accurate, and aligned with the assignment.',
@@ -130,10 +134,10 @@ function buildLlmSystemPrompt(order, mode) {
 function buildOutputFileInstruction(serviceType) {
   if (serviceType === SERVICE_PRESENTATION) {
     return [
-      'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open presentation file.',
+      'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open PDF file.',
       'Format:',
       '```llm_file',
-      '{"type":"file","filename":"presentation.pptx","mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","base64":"<BASE64_CONTENT>"}',
+      '{"type":"file","filename":"presentation.pdf","mimeType":"application/pdf","base64":"<BASE64_CONTENT>"}',
       '```',
       'Do not return plain text. Do not add any extra text before or after the block.'
     ].join('\n')

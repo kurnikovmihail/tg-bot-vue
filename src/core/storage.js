@@ -444,6 +444,24 @@ export async function exportOrderResultAsFile(order) {
   throw new Error('Нейросеть не прислала готовый файл. Обратитесь в поддержку.')
 }
 
+export function inspectOrderResult(order) {
+  const raw = String(order?.result_text || '')
+  const embeddedFile = parseEmbeddedLlmFile(raw)
+  if (embeddedFile) {
+    return {
+      kind: 'file',
+      raw,
+      blob: embeddedFile.blob,
+      filename: embeddedFile.filename
+    }
+  }
+  return {
+    kind: 'text',
+    raw,
+    text: raw
+  }
+}
+
 export function clearAllOrders() {
   saveOrders([])
   saveRevisions([])

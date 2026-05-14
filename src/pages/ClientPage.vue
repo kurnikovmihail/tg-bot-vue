@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import mammoth from 'mammoth/mammoth.browser'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   ORDER_STATUS_AWAITING_PAYMENT,
@@ -23,6 +24,7 @@ import {
   createOrder,
   exportOrderResultAsFile,
   getOrderForUser,
+  inspectOrderResult,
   listUserOrders,
   markPaidAndStart,
   purgeExpiredOrders,
@@ -140,9 +142,20 @@ const revisionRemaining = computed(() => {
 })
 
 const revisionPrompt = computed(() => revisionPromptText(revisionRemaining.value))
-const currentResultRaw = computed(() => String(selectedOrder.value?.result_text || '').trim())
+const currentResultRaw = computed(() => String(selectedOrder.value?.result_text || ''))
 const hasResultText = computed(() => currentResultRaw.value.length > 0)
 const currentResultText = computed(() => currentResultRaw.value)
+const resultPreview = reactive({
+  status: 'idle',
+  kind: 'none',
+  filename: '',
+  mimeType: '',
+  objectUrl: '',
+  docxHtml: '',
+  text: '',
+  error: ''
+})
+let resultPreviewUrlToken = ''
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -200,6 +213,70 @@ function extractErrorMessage(error) {
     return 'Неизвестная техническая ошибка.'
   }
   return raw.length > 220 ? `${raw.slice(0, 217)}...` : raw
+}
+
+function resetResultPreview() {
+  if (resultPreviewUrlToken) {
+    window.URL.revokeObjectURL(resultPreviewUrlToken)
+    resultPreviewUrlToken = ''
+  }
+  resultPreview.status = 'idle'
+  resultPreview.kind = 'none'
+  resultPreview.filename = ''
+  resultPreview.mimeType = ''
+  resultPreview.objectUrl = ''
+  resultPreview.docxHtml = ''
+  resultPreview.text = ''
+  resultPreview.error = ''
+}
+
+async function syncResultPreviewFromOrder(order) {
+  resetResultPreview()
+  if (!order) {
+    return
+  }
+
+  resultPreview.status = 'loading'
+  const inspected = inspectOrderResult(order)
+  if (inspected.kind !== 'file') {
+    resultPreview.status = 'ready'
+    resultPreview.kind = 'text'
+    resultPreview.text = String(inspected.text || '')
+    return
+  }
+
+  resultPreview.filename = inspected.filename
+  resultPreview.mimeType = String(inspected.blob?.type || '').toLowerCase()
+
+  if (resultPreview.mimeType.includes('application/pdf')) {
+    resultPreview.kind = 'pdf'
+    resultPreviewUrlToken = window.URL.createObjectURL(inspected.blob)
+    resultPreview.objectUrl = resultPreviewUrlToken
+    resultPreview.status = 'ready'
+    return
+  }
+
+  if (
+    resultPreview.mimeType.includes('officedocument.wordprocessingml.document') ||
+    resultPreview.filename.toLowerCase().endsWith('.docx')
+  ) {
+    try {
+      const arrayBuffer = await inspected.blob.arrayBuffer()
+      const converted = await mammoth.convertToHtml({ arrayBuffer })
+      resultPreview.kind = 'docx'
+      resultPreview.docxHtml = converted.value || ''
+      resultPreview.status = 'ready'
+      return
+    } catch (error) {
+      resultPreview.kind = 'file'
+      resultPreview.error = `Не удалось отрисовать DOCX в браузере: ${extractErrorMessage(error)}`
+      resultPreview.status = 'ready'
+      return
+    }
+  }
+
+  resultPreview.kind = 'file'
+  resultPreview.status = 'ready'
 }
 
 function resetDraft(keepService = false) {
@@ -599,33 +676,26 @@ async function saveResultFile(blob, filename) {
 
   // Modern desktop browsers with native file picker.
   if (window.showSaveFilePicker) {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: filename,
-      types: [
-        {
-          description: fileDescription,
-          accept: { [mime]: [ext] }
-        }
-      ]
-    })
-    const writable = await handle.createWritable()
-    await writable.write(blob)
-    await writable.close()
-    return 'saved'
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: fileDescription,
+            accept: { [mime]: [ext] }
+          }
+        ]
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return 'saved'
+    } catch {
+      // fallback to next strategy
+    }
   }
 
   // Mobile-friendly fallback: share a real file via system sheet.
-  if (typeof File !== 'undefined' && nav.canShare && nav.share) {
-    const file = new File([blob], filename, { type: mime })
-    if (nav.canShare({ files: [file] })) {
-      await nav.share({
-        files: [file],
-        title: filename,
-        text: 'Результат заказа'
-      })
-      return 'shared'
-    }
-  }
 
   const link = document.createElement('a')
   link.href = window.URL.createObjectURL(blob)
@@ -708,6 +778,17 @@ function handleMenuAction(action) {
     goFeedback()
   }
 }
+
+watch(
+  () => `${selectedOrder.value?.id || 0}:${selectedOrder.value?.result_version || 0}:${selectedOrder.value?.updated_at || ''}`,
+  () => {
+    syncResultPreviewFromOrder(selectedOrder.value)
+  }
+)
+
+onBeforeUnmount(() => {
+  resetResultPreview()
+})
 
 onMounted(() => {
   activeUserId.value = getOrCreateActiveUserId()
@@ -854,7 +935,24 @@ onMounted(() => {
 
       <div v-else-if="screen === 'order-details' && selectedOrder" class="stack">
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
-        <pre v-if="hasResultText" class="result-block">{{ currentResultText }}</pre>
+        <div v-if="hasResultText" class="result-block">
+          <p class="muted" v-if="resultPreview.filename">
+            Файл: <strong>{{ resultPreview.filename }}</strong>
+          </p>
+          <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
+          <iframe
+            v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
+            class="result-iframe"
+            :src="resultPreview.objectUrl"
+            title="Предпросмотр PDF"
+          />
+          <div v-else-if="resultPreview.kind === 'docx'" class="docx-preview" v-html="resultPreview.docxHtml" />
+          <p v-else-if="resultPreview.kind === 'file'" class="muted">
+            Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
+          </p>
+          <pre v-else class="result-viewer">{{ currentResultText }}</pre>
+          <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
+        </div>
         <div v-if="hasResultText" class="row">
           <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
           <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
@@ -912,7 +1010,24 @@ onMounted(() => {
 
       <div v-else-if="screen === 'result-view' && selectedOrder" class="stack">
         <h2>Результат заказа</h2>
-        <pre class="result-block result-viewer">{{ currentResultText }}</pre>
+        <div class="result-block">
+          <p class="muted" v-if="resultPreview.filename">
+            Файл: <strong>{{ resultPreview.filename }}</strong>
+          </p>
+          <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
+          <iframe
+            v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
+            class="result-iframe"
+            :src="resultPreview.objectUrl"
+            title="Предпросмотр PDF"
+          />
+          <div v-else-if="resultPreview.kind === 'docx'" class="docx-preview" v-html="resultPreview.docxHtml" />
+          <p v-else-if="resultPreview.kind === 'file'" class="muted">
+            Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
+          </p>
+          <pre v-else class="result-viewer">{{ currentResultText }}</pre>
+          <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
+        </div>
         <div class="row">
           <button class="btn btn-primary" @click="copyCurrentResult">Скопировать текст</button>
           <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>

@@ -28,8 +28,7 @@ export function chooseServiceText() {
   const lines = getServiceMenuItems()
     .map(([serviceKey, label]) => {
       const offer = getOffer(serviceKey)
-      const prefix = hasVolumePricing(serviceKey) ? 'от ' : ''
-      return `• ${label} — ${prefix}${offer.priceRub} ₽`
+      return `• ${label} — ${offer.priceRub} ₽`
     })
     .join('\n')
   return `🎯 Выберите формат работы:\n\n${lines}\n\nПосле выбора я проведу вас по вопросам и соберу точный бриф.`
@@ -60,7 +59,7 @@ export function rulesText() {
 export function offerCardText(serviceKey) {
   const offer = getOffer(serviceKey)
   const points = offer.descriptionPoints.map((point) => `• ${point}`).join('\n')
-  const priceLine = `💳 Стоимость: ${hasVolumePricing(serviceKey) ? 'от ' : ''}${offer.priceRub} ₽`
+  const priceLine = `💳 Стоимость: ${offer.priceRub} ₽`
   return `✨ ${offer.title}\n\nЧто входит:\n${points}\n\nОбъем и результат:\n${offer.scope}\n\nСроки:\n${offer.deadlineInfo}\n\n${priceLine}\n🔁 После сдачи доступно до 7 правок.`
 }
 

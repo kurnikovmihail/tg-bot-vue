@@ -836,7 +836,7 @@ onMounted(() => {
         <article v-for="service in serviceItems" :key="service.key" class="service-item">
           <div class="service-row">
             <h2>{{ service.label }}</h2>
-            <p class="price">{{ service.hasFrom ? 'от ' : '' }}{{ service.priceRub }} ₽</p>
+            <p class="price">{{ service.priceRub }} ₽</p>
           </div>
           <p>{{ service.shortDescription }}</p>
           <button class="btn btn-primary" @click="startDraft(service.key)">Продолжить оформление</button>

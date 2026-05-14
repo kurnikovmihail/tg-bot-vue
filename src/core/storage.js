@@ -8,6 +8,7 @@ import {
   getOffer
 } from './catalog'
 import { publicOrderNo } from './orderNumbers'
+import { buildGeneratedResultFile, getRenderableResultText } from './resultFiles'
 
 const ORDERS_KEY = 'mgdi_orders_v2'
 const REVISIONS_KEY = 'mgdi_revisions_v2'
@@ -361,6 +362,76 @@ function decodeBase64ToBytes(base64Text) {
   return bytes
 }
 
+function hasAsciiMarker(bytes, marker, from = 0, to = bytes.length) {
+  if (!bytes || !marker || marker.length === 0) {
+    return false
+  }
+  const start = Math.max(0, from)
+  const end = Math.min(bytes.length, to)
+  if (end - start < marker.length) {
+    return false
+  }
+  for (let i = start; i <= end - marker.length; i += 1) {
+    let ok = true
+    for (let j = 0; j < marker.length; j += 1) {
+      if (bytes[i + j] !== marker.charCodeAt(j)) {
+        ok = false
+        break
+      }
+    }
+    if (ok) {
+      return true
+    }
+  }
+  return false
+}
+
+function isLikelyZipContainer(bytes) {
+  if (!bytes || bytes.length < 22) {
+    return false
+  }
+  const startsWithZipHeader =
+    (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) ||
+    (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x05 && bytes[3] === 0x06) ||
+    (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x07 && bytes[3] === 0x08)
+  if (!startsWithZipHeader) {
+    return false
+  }
+  const tailStart = Math.max(0, bytes.length - 70_000)
+  return hasAsciiMarker(bytes, 'PK\u0005\u0006', tailStart, bytes.length)
+}
+
+function isLikelyPdf(bytes) {
+  if (!bytes || bytes.length < 8) {
+    return false
+  }
+  if (!hasAsciiMarker(bytes, '%PDF-', 0, Math.min(bytes.length, 1024))) {
+    return false
+  }
+  const tailStart = Math.max(0, bytes.length - 4096)
+  return hasAsciiMarker(bytes, '%%EOF', tailStart, bytes.length)
+}
+
+function isBinaryPayloadValid(bytes, mimeType, filename) {
+  const mime = String(mimeType || '').toLowerCase()
+  const name = String(filename || '').toLowerCase()
+  const expectPdf = mime.includes('application/pdf') || name.endsWith('.pdf')
+  const expectZipOffice =
+    mime.includes('officedocument') ||
+    mime.includes('application/zip') ||
+    name.endsWith('.docx') ||
+    name.endsWith('.pptx') ||
+    name.endsWith('.xlsx')
+
+  if (expectPdf) {
+    return isLikelyPdf(bytes)
+  }
+  if (expectZipOffice) {
+    return isLikelyZipContainer(bytes)
+  }
+  return true
+}
+
 function getFilenameFromUrl(url, fallback = 'work_file') {
   try {
     const parsed = new URL(String(url || ''))
@@ -388,6 +459,10 @@ async function fetchRemoteFile(url, fallbackName = 'work_file') {
   }
   const blob = await response.blob()
   const filename = getFilenameFromUrl(url, fallbackName)
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  if (!isBinaryPayloadValid(bytes, blob.type, filename)) {
+    throw new Error('Remote file payload is incomplete or corrupted')
+  }
   return { blob, filename }
 }
 
@@ -475,6 +550,9 @@ function parseEmbeddedLlmFile(resultText) {
         ? 'work.pdf'
         : 'work.docx'
     const filename = sanitizeFilename(parsed.filename || parsed.name, fallbackName)
+    if (!isBinaryPayloadValid(bytes, mimeType, filename)) {
+      continue
+    }
     const blob = new Blob([bytes], {
       type: mimeType || 'application/octet-stream'
     })
@@ -497,9 +575,7 @@ export async function exportOrderResultAsFile(order) {
       // Ignore and fall back to raw text file.
     }
   }
-  const fallbackBlob = new Blob([safeText], { type: 'text/plain;charset=utf-8' })
-  const fallbackFilename = sanitizeFilename(`order_${order?.id || 'result'}_raw.txt`, 'order_result_raw.txt')
-  return { blob: fallbackBlob, filename: fallbackFilename }
+  return buildGeneratedResultFile(order, safeText)
 }
 
 export function inspectOrderResult(order) {
@@ -516,7 +592,7 @@ export function inspectOrderResult(order) {
   return {
     kind: 'text',
     raw,
-    text: raw
+    text: getRenderableResultText(raw, order)
   }
 }
 

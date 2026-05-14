@@ -108,8 +108,14 @@ function summarizePreviousResult(value) {
   if (!raw) {
     return ''
   }
-  if (raw.includes('```llm_file') || raw.includes('"type":"file"') || raw.includes('"type": "file"')) {
-    return '[Previous version is a file payload and is omitted in revision prompt.]'
+  if (
+    raw.includes('```llm_file') ||
+    raw.includes('```llm-file') ||
+    raw.includes('"type":"file"') ||
+    raw.includes('"type": "file"') ||
+    raw.includes('"base64"')
+  ) {
+    return '[Previous version contained a binary file payload. Recreate the full final content as structured text.]'
   }
   return raw.length > 5000 ? `${raw.slice(0, 5000)}...` : raw
 }
@@ -134,22 +140,19 @@ function buildLlmSystemPrompt(order, mode) {
 function buildOutputFileInstruction(serviceType) {
   if (serviceType === SERVICE_PRESENTATION) {
     return [
-      'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open PDF file.',
-      'Format:',
-      '```llm_file',
-      '{"type":"file","filename":"presentation.pdf","mimeType":"application/pdf","base64":"<BASE64_CONTENT>"}',
-      '```',
-      'Do not return plain text. Do not add any extra text before or after the block.'
+      'The platform will convert your final answer into a ready-to-open PDF file.',
+      'Return the final presentation content as clean structured text only.',
+      'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links, or code fences.',
+      'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
+      'For each slide include a short title and concise slide text. If images are required, describe the exact image idea inside the relevant slide.'
     ].join('\n')
   }
 
   return [
-    'Return ONLY one fenced JSON block named llm_file with a complete ready-to-open Word file.',
-    'Format:',
-    '```llm_file',
-    '{"type":"file","filename":"work.docx","mimeType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","base64":"<BASE64_CONTENT>"}',
-    '```',
-    'Do not return plain text. Do not add any extra text before or after the block.'
+    'The platform will convert your final answer into a ready-to-open Word DOCX file.',
+    'Return the full final work as clean structured text only.',
+    'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links, or code fences.',
+    'Use headings, paragraphs, lists, and bibliography sections when required.'
   ].join('\n')
 }
 

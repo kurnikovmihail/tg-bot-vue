@@ -85,14 +85,19 @@ export async function applyRevision(order, requestText) {
 
   const prompt = buildLlmPayload(order)
   const previous = summarizePreviousResult(order.result_text)
+  const serviceSpecificRevisionHint =
+    order?.service_type === SERVICE_PRESENTATION
+      ? 'For presentation revisions: strictly apply requested visual style updates (for example color theme) and requested images on relevant slides.'
+      : 'Apply the revision request exactly and keep the whole work coherent.'
   const userPrompt = [
     prompt,
     '',
-    'Текущая версия работы:',
-    previous || 'Пусто.',
+    'Current version of the work:',
+    previous || 'Empty.',
     '',
-    `Запрос правки клиента: ${requestText}`,
-    'Обнови работу целиком с учетом запроса правки.'
+    `Client revision request: ${requestText}`,
+    'Update the whole work according to the revision request.',
+    serviceSpecificRevisionHint
   ].join('\n')
 
   return callLlm({
@@ -143,8 +148,12 @@ function buildOutputFileInstruction(serviceType) {
       'The platform will convert your final answer into a ready-to-open PDF file.',
       'Return the final presentation content as clean structured text only.',
       'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links, or code fences.',
+      'At the very top, add one metadata line: "Theme color: <color>".',
       'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
-      'For each slide include a short title and concise slide text. If images are required, describe the exact image idea inside the relevant slide.'
+      'For each slide include a short title and concise slide text.',
+      'If images are required, add one explicit line per slide: "Image URL: <https://...>".',
+      'Optionally after URL, add one more line: "Image idea: <what should be shown>".',
+      'Use direct image links to actual files (jpg, jpeg, png, webp), not gallery pages.'
     ].join('\n')
   }
 
@@ -173,14 +182,14 @@ function buildRequirementLines(order, req) {
     const label = labelByKey.get(key) || key.replaceAll('_', ' ')
     return `- ${label}: ${value}`
   })
-  return lines.length ? lines.join('\n') : '- Нет данных'
+  return lines.length ? lines.join('\n') : '- no data'
 }
 
 export async function pingLlm() {
   ensureLlmConfigured()
   const reply = await callLlm({
-    systemPrompt: 'Ответь коротко: API доступен.',
-    userPrompt: 'Напиши строго: OK',
+    systemPrompt: 'Reply briefly: API is available.',
+    userPrompt: 'Write exactly: OK',
     maxTokens: 16
   })
   return String(reply || '').trim()

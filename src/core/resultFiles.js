@@ -2,6 +2,8 @@ import { SERVICE_PRESENTATION } from './catalog'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const PDF_MIME = 'application/pdf'
+const IMAGE_PROXY_ENDPOINT = '/api/image-proxy'
+const IMAGE_PROXY_TIMEOUT_MS = 12000
 
 function sanitizeFilename(value, fallbackName) {
   const raw = String(value || '').trim()
@@ -115,11 +117,11 @@ function buildEmptyResultText(order) {
   const topic = String(req.topic || order?.topic || '').trim()
   const subject = String(req.subject || '').trim()
   return [
-    'Готовая работа',
-    topic ? `Тема: ${topic}` : '',
-    subject ? `Предмет: ${subject}` : '',
+    'Completed work',
+    topic ? `Topic: ${topic}` : '',
+    subject ? `Subject: ${subject}` : '',
     '',
-    'Содержимое исходного ответа не удалось восстановить из поврежденного бинарного payload. Обратитесь в поддержку и сообщите номер заказа.'
+    'The source answer could not be restored from a corrupted binary payload. Contact support and provide the order number.'
   ].filter((line) => line !== '').join('\n')
 }
 
@@ -201,11 +203,134 @@ function wrapCanvasText(ctx, text, maxWidth, maxLines) {
   return lines
 }
 
+const PRESENTATION_PALETTES = {
+  green: {
+    background: '#f7f8f2',
+    header: '#143d3a',
+    accent: '#d99f45',
+    text: '#1b2423',
+    panel: '#e7efe9',
+    panelStroke: '#b7c8bc'
+  },
+  red: {
+    background: '#fff6f6',
+    header: '#7a1010',
+    accent: '#e05353',
+    text: '#2b1b1b',
+    panel: '#ffe9e9',
+    panelStroke: '#efb4b4'
+  },
+  blue: {
+    background: '#f5f9ff',
+    header: '#103b6d',
+    accent: '#58a1ff',
+    text: '#172233',
+    panel: '#e8f2ff',
+    panelStroke: '#b8d4ff'
+  },
+  dark: {
+    background: '#f3f3f3',
+    header: '#1f1f1f',
+    accent: '#8f8f8f',
+    text: '#1f1f1f',
+    panel: '#e6e6e6',
+    panelStroke: '#bfbfbf'
+  },
+  amber: {
+    background: '#fffaf0',
+    header: '#6f3a12',
+    accent: '#e8a142',
+    text: '#33261a',
+    panel: '#fff0d8',
+    panelStroke: '#e6c79d'
+  }
+}
+
+function normalizeText(value) {
+  return String(value || '').toLowerCase()
+}
+
+function parseBooleanLike(value) {
+  const raw = normalizeText(value).trim()
+  if (!raw) {
+    return false
+  }
+  return ['yes', 'true', '1', 'on', 'required'].some((token) => raw.includes(token))
+}
+
+function pickPaletteByText(text) {
+  const source = normalizeText(text)
+  if (!source) {
+    return null
+  }
+  if (/(red|crimson|scarlet|burgundy|maroon)/i.test(source)) {
+    return PRESENTATION_PALETTES.red
+  }
+  if (/(blue|navy|azure|cyan)/i.test(source)) {
+    return PRESENTATION_PALETTES.blue
+  }
+  if (/(dark|black|graphite|charcoal)/i.test(source)) {
+    return PRESENTATION_PALETTES.dark
+  }
+  if (/(amber|orange|yellow|gold)/i.test(source)) {
+    return PRESENTATION_PALETTES.amber
+  }
+  if (/(green|emerald|teal)/i.test(source)) {
+    return PRESENTATION_PALETTES.green
+  }
+  return null
+}
+
+function extractThemeColorLine(text) {
+  const match = String(text || '').match(/theme color\s*:\s*([^\n\r]+)/i)
+  return String(match?.[1] || '').trim()
+}
+
+function detectPresentationPalette(order, text) {
+  const req = order?.frozen_requirements || {}
+  const style = normalizeText(req.style)
+  const themeFromResult = pickPaletteByText(extractThemeColorLine(text))
+  if (themeFromResult) {
+    return themeFromResult
+  }
+
+  const mergedHints = [
+    order?.last_revision_request,
+    req.teacher_requirements,
+    req.special_requirements,
+    text.slice(0, 1800)
+  ].join('\n')
+  const themeFromHints = pickPaletteByText(mergedHints)
+  if (themeFromHints) {
+    return themeFromHints
+  }
+
+  if (style.includes('strict')) {
+    return PRESENTATION_PALETTES.blue
+  }
+  if (style.includes('visual')) {
+    return PRESENTATION_PALETTES.amber
+  }
+  return PRESENTATION_PALETTES.green
+}
+
+function arePresentationImagesRequested(order, text) {
+  const req = order?.frozen_requirements || {}
+  if (parseBooleanLike(req.images_required)) {
+    return true
+  }
+  const revisionHint = normalizeText(order?.last_revision_request)
+  if (/(image|images|illustration|photo|picture)/i.test(revisionHint)) {
+    return !/(without\s+images|no\s+images)/i.test(revisionHint)
+  }
+  return /(image url|image idea|illustration|photo)/i.test(String(text || ''))
+}
+
 function splitPresentationSlides(text, order) {
   const normalized = String(text || '').replace(/\r\n/g, '\n').trim()
   const wanted = Number.parseInt(String(order?.frozen_requirements?.slides_count || ''), 10)
   const marked = normalized
-    .replace(/\n(?=\s*(?:#{1,3}\s*)?(?:slide|слайд)\s*\d+)/gi, '\n---SLIDE---\n')
+    .replace(/\n(?=\s*(?:#{1,3}\s*)?(?:slide)\s*\d+)/gi, '\n---SLIDE---\n')
     .split('---SLIDE---')
     .map((part) => part.trim())
     .filter(Boolean)
@@ -224,40 +349,177 @@ function splitPresentationSlides(text, order) {
   return slides.length ? slides : [normalized]
 }
 
-function drawSlideToCanvas(slideText, index, total) {
+function extractSlideParts(slideText, index) {
+  const lines = String(slideText || '')
+    .split(/\r?\n/)
+    .map(cleanMarkdownLine)
+    .filter(Boolean)
+
+  const first = lines[0] || `Slide ${index + 1}`
+  const title = first.replace(/^(slide)\s*\d+\s*[:.-]?\s*/i, '') || first
+  const imageHints = []
+  const imageUrls = []
+  const bodyLines = []
+
+  for (const line of lines.slice(1)) {
+    const urlMatch = line.match(/^(?:image\s*url|image\s*link|url)\s*[:\-]\s*(https?:\/\/\S+)/i)
+    if (urlMatch?.[1]) {
+      imageUrls.push(urlMatch[1].trim().replace(/[),.;]+$/, ''))
+      continue
+    }
+    const imageMatch = line.match(/^(?:image idea|image|illustration|photo)\s*[:\-]\s*(.+)$/i)
+    if (imageMatch?.[1]) {
+      imageHints.push(imageMatch[1].trim())
+      continue
+    }
+    bodyLines.push(line)
+  }
+
+  return {
+    title,
+    body: bodyLines.join(' '),
+    imageHint: imageHints.join('. ').trim(),
+    imageUrl: imageUrls[0] || ''
+  }
+}
+
+async function resolveImageDataUrlFromProxy(imageUrl) {
+  const clean = String(imageUrl || '').trim()
+  if (!/^https?:\/\//i.test(clean)) {
+    return ''
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), IMAGE_PROXY_TIMEOUT_MS)
+  try {
+    const response = await fetch(IMAGE_PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: clean }),
+      signal: controller.signal
+    })
+    if (!response.ok) {
+      return ''
+    }
+    const data = await response.json()
+    const dataUrl = String(data?.dataUrl || '').trim()
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(dataUrl)) {
+      return ''
+    }
+    return dataUrl
+  } catch {
+    return ''
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function loadImageElement(dataUrl) {
+  const source = String(dataUrl || '').trim()
+  if (!source) {
+    return null
+  }
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = source
+  })
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2))
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + width - r, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+  ctx.lineTo(x + width, y + height - r)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
+  ctx.lineTo(x + r, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+function drawIllustrationCard(ctx, x, y, width, height, palette, hint, index, imageElement = null) {
+  drawRoundedRect(ctx, x, y, width, height, 26)
+  ctx.fillStyle = palette.panel
+  ctx.fill()
+  ctx.strokeStyle = palette.panelStroke
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  if (imageElement) {
+    ctx.save()
+    drawRoundedRect(ctx, x + 18, y + 58, width - 36, height - 76, 18)
+    ctx.clip()
+    ctx.drawImage(imageElement, x + 18, y + 58, width - 36, height - 76)
+    ctx.restore()
+  } else {
+    ctx.fillStyle = palette.accent
+    ctx.globalAlpha = 0.18
+    ctx.beginPath()
+    ctx.arc(x + width * 0.72, y + height * 0.3, 90, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(x + width * 0.32, y + height * 0.68, 120, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 1
+  }
+
+  ctx.fillStyle = palette.header
+  ctx.font = '700 26px Arial, sans-serif'
+  ctx.fillText(`Illustration ${index + 1}`, x + 26, y + 42)
+
+  ctx.fillStyle = palette.text
+  ctx.font = '500 22px Arial, sans-serif'
+  const safeHint = String(hint || 'Visual support for this slide').slice(0, 240)
+  const hintLines = wrapCanvasText(ctx, safeHint, width - 52, 8)
+  let cursorY = y + 92
+  for (const line of hintLines) {
+    ctx.fillText(line, x + 26, cursorY)
+    cursorY += 34
+  }
+}
+
+function drawSlideToCanvas(slideText, index, total, options = {}) {
   const canvas = document.createElement('canvas')
   canvas.width = 1600
   canvas.height = 900
   const ctx = canvas.getContext('2d')
+  const palette = options.palette || PRESENTATION_PALETTES.green
+  const withIllustration = Boolean(options.withIllustration)
 
-  ctx.fillStyle = '#f7f8f2'
+  ctx.fillStyle = palette.background
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = '#143d3a'
+  ctx.fillStyle = palette.header
   ctx.fillRect(0, 0, canvas.width, 118)
-  ctx.fillStyle = '#d99f45'
+  ctx.fillStyle = palette.accent
   ctx.fillRect(0, 118, canvas.width, 10)
 
-  const lines = String(slideText || '').split(/\r?\n/).map(cleanMarkdownLine).filter(Boolean)
-  const first = lines[0] || `Slide ${index + 1}`
-  const title = first.replace(/^(slide|слайд)\s*\d+\s*[:.-]?\s*/i, '') || first
-  const body = lines.slice(1).join(' ')
+  const { title, body, imageHint } = extractSlideParts(slideText, index)
+  const textMaxWidth = withIllustration ? 860 : 1340
 
   ctx.fillStyle = '#ffffff'
   ctx.font = '700 54px Arial, sans-serif'
-  for (const line of wrapCanvasText(ctx, title, 1340, 1)) {
+  for (const line of wrapCanvasText(ctx, title, textMaxWidth, 1)) {
     ctx.fillText(line, 90, 78)
   }
 
-  ctx.fillStyle = '#1b2423'
+  ctx.fillStyle = palette.text
   ctx.font = '400 37px Arial, sans-serif'
-  const bodyLines = wrapCanvasText(ctx, body || lines.join(' '), 1340, 12)
+  const bodyLines = wrapCanvasText(ctx, body || title, textMaxWidth, 12)
   let y = 210
   for (const line of bodyLines) {
     ctx.fillText(line, 120, y)
     y += 54
   }
 
-  ctx.fillStyle = '#143d3a'
+  if (withIllustration) {
+    drawIllustrationCard(ctx, 1040, 176, 470, 560, palette, imageHint || title, index, options.imageElement || null)
+  }
+
+  ctx.fillStyle = palette.header
   ctx.font = '700 28px Arial, sans-serif'
   ctx.fillText(`${index + 1} / ${total}`, 90, 835)
   return canvas
@@ -266,18 +528,29 @@ function drawSlideToCanvas(slideText, index, total) {
 async function buildPresentationPdfBlob(order, text) {
   const { jsPDF } = await import('jspdf')
   const slides = splitPresentationSlides(text, order)
+  const palette = detectPresentationPalette(order, text)
+  const withIllustration = arePresentationImagesRequested(order, text)
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4', compress: true })
   const width = pdf.internal.pageSize.getWidth()
   const height = pdf.internal.pageSize.getHeight()
 
-  slides.forEach((slide, index) => {
+  for (let index = 0; index < slides.length; index += 1) {
+    const slide = slides[index]
     if (index > 0) {
       pdf.addPage('a4', 'landscape')
     }
-    const canvas = drawSlideToCanvas(slide, index, slides.length)
+
+    const slideParts = extractSlideParts(slide, index)
+    let imageElement = null
+    if (withIllustration && slideParts.imageUrl) {
+      const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl)
+      imageElement = await loadImageElement(proxiedDataUrl)
+    }
+
+    const canvas = drawSlideToCanvas(slide, index, slides.length, { palette, withIllustration, imageElement })
     const image = canvas.toDataURL('image/jpeg', 0.92)
     pdf.addImage(image, 'JPEG', 0, 0, width, height)
-  })
+  }
 
   return pdf.output('blob')
 }

@@ -83,6 +83,8 @@ const feedbackInput = ref('')
 const myOrders = ref([])
 
 let noticeTimer = null
+let recoveryTimer = null
+let recoveryInFlight = false
 
 const serviceItems = computed(() =>
   getServiceMenuItems().map(([key, label]) => {
@@ -296,15 +298,52 @@ function refreshMyOrders() {
 }
 
 async function recoverInProgressOrders() {
-  const candidates = listUserOrders(activeUserId.value, 50).filter((order) => order.status === ORDER_STATUS_IN_PROGRESS)
-  for (const order of candidates) {
-    try {
-      const generated = await generateInitial(order)
-      setReady(Number(order.id), generated, APP_CONFIG.revisionWindowHours)
-    } catch (error) {
-      setOrderError(Number(order.id), extractErrorMessage(error))
-    }
+  if (recoveryInFlight || !activeUserId.value) {
+    return
   }
+  recoveryInFlight = true
+  try {
+    const candidates = listUserOrders(activeUserId.value, 50)
+      .filter((order) => order.status === ORDER_STATUS_IN_PROGRESS)
+      .sort((a, b) => Number(a.id) - Number(b.id))
+
+    for (const order of candidates) {
+      const fresh = getOrderForUser(order.id, activeUserId.value)
+      if (!fresh || fresh.status !== ORDER_STATUS_IN_PROGRESS) {
+        continue
+      }
+      try {
+        const generated = await generateInitial(fresh)
+        setReady(Number(fresh.id), generated, APP_CONFIG.revisionWindowHours)
+      } catch (error) {
+        setOrderError(Number(fresh.id), extractErrorMessage(error))
+      }
+    }
+  } finally {
+    recoveryInFlight = false
+  }
+}
+
+function scheduleRecoveryLoop() {
+  if (recoveryTimer) {
+    window.clearInterval(recoveryTimer)
+  }
+  recoveryTimer = window.setInterval(() => {
+    recoverInProgressOrders().finally(() => {
+      refreshMyOrders()
+      refreshCurrentOrder()
+    })
+  }, 45_000)
+}
+
+function handleVisibilityResume() {
+  if (document.visibilityState !== 'visible') {
+    return
+  }
+  recoverInProgressOrders().finally(() => {
+    refreshMyOrders()
+    refreshCurrentOrder()
+  })
 }
 
 function goMenu() {
@@ -788,6 +827,11 @@ watch(
 
 onBeforeUnmount(() => {
   resetResultPreview()
+  if (recoveryTimer) {
+    window.clearInterval(recoveryTimer)
+    recoveryTimer = null
+  }
+  document.removeEventListener('visibilitychange', handleVisibilityResume)
 })
 
 onMounted(() => {
@@ -799,6 +843,8 @@ onMounted(() => {
     router.replace({ path: '/', query: nextQuery })
   }
   purgeExpiredOrders(72)
+  document.addEventListener('visibilitychange', handleVisibilityResume)
+  scheduleRecoveryLoop()
   recoverInProgressOrders().finally(() => {
     refreshMyOrders()
   })

@@ -27,7 +27,7 @@ export const APP_CONFIG = {
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
   apiModel: normalized(env.VITE_LLM_MODEL, 'openai/gpt-5.4'),
-  apiPresentationModel: normalized(env.VITE_LLM_MODEL_PRESENTATION, 'openai/gpt-5.5'),
+  apiPresentationModel: normalized(env.VITE_LLM_MODEL_PRESENTATION, 'openai/gpt-5.4'),
   apiClientId: normalized(env.VITE_LLM_CLIENT_ID, normalized(env.VITE_LLM_APP_TITLE))
 }
 

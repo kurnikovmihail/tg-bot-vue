@@ -155,7 +155,7 @@ export default async function handler(req, res) {
   const apiUrl = String(process.env.LLM_API_URL || process.env.VITE_LLM_API_URL || 'https://polza.ai/api/v1/chat/completions').trim()
   const apiMode = String(process.env.LLM_API_MODE || process.env.VITE_LLM_API_MODE || 'chat_completions').trim().toLowerCase()
   const fallbackModel = String(process.env.LLM_MODEL || process.env.VITE_LLM_MODEL || 'openai/gpt-5.4').trim()
-  const presentationModel = String(process.env.LLM_MODEL_PRESENTATION || process.env.VITE_LLM_MODEL_PRESENTATION || 'openai/gpt-5.5').trim()
+  const presentationModel = String(process.env.LLM_MODEL_PRESENTATION || process.env.VITE_LLM_MODEL_PRESENTATION || 'openai/gpt-5.4').trim()
   const clientId = String(process.env.LLM_CLIENT_ID || process.env.VITE_LLM_CLIENT_ID || 'tg-bot-vue').trim()
 
   if (!apiKey) {

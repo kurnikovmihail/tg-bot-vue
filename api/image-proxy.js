@@ -5,7 +5,8 @@ const ALLOWED_IMAGE_MIME = new Set([
   'image/png',
   'image/webp',
   'image/gif',
-  'image/avif'
+  'image/avif',
+  'image/svg+xml'
 ])
 
 function readBody(req) {
@@ -70,6 +71,9 @@ function pickImageMime(contentTypeRaw, url) {
   }
   if (pathname.endsWith('.avif')) {
     return 'image/avif'
+  }
+  if (pathname.endsWith('.svg')) {
+    return 'image/svg+xml'
   }
   return ''
 }

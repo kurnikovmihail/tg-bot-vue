@@ -147,24 +147,21 @@ function buildOutputFileInstruction(serviceType) {
     return [
       'The platform will convert your final answer into a ready-to-open PDF file.',
       'Return the final presentation content as clean structured text only.',
-      'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links for the final presentation file, or code fences.',
+      'Do not return base64, data URLs, binary payloads, JSON file wrappers, or code fences.',
       'At the very top, add one metadata line: "Theme color: <color>".',
       'Do not make presentations look the same every time: choose a fresh structure, visual rhythm, theme color, and layout logic for each new order.',
       'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
       'For each slide include a short title and concise slide text.',
-      'If images are required, add one explicit line per slide: "Image URL: <https://...>".',
-      'After the URL, always add one more line: "Image idea: <specific searchable description>".',
-      'Use only direct image file links that you are confident are relevant to the slide topic (jpg, jpeg, png, webp).',
-      'Prefer stable public-domain or freely licensed direct image URLs from Wikimedia Commons upload.wikimedia.org when the topic needs real factual images.',
-      'Do not use random image services, placeholder image services, gallery pages, search pages, or unrelated decorative photos.',
-      'If you are not sure the URL is a direct image file, leave Image URL empty and provide a strong Image idea for a designed visual placeholder.'
+      'If images are required, add exactly one line per slide in this format: "Image URL: <direct https URL to an image file>".',
+      'The Image URL must open directly as an image file in a browser and should point to jpg, jpeg, png, webp, gif, avif, or svg.',
+      'Do not add any other URLs in the presentation text.'
     ].join('\n')
   }
 
   return [
     'The platform will convert your final answer into a ready-to-open Word DOCX file.',
     'Return the full final work as clean structured text only.',
-    'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links for the final document file, or code fences.',
+    'Do not return base64, data URLs, binary payloads, JSON file wrappers, or code fences.',
     'Use headings, paragraphs, lists, and bibliography sections when required.'
   ].join('\n')
 }

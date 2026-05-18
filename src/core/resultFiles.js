@@ -286,6 +286,22 @@ function extractThemeColorLine(text) {
   return String(match?.[1] || '').trim()
 }
 
+function isPresentationMetaLine(line) {
+  const raw = cleanMarkdownLine(line).trim()
+  if (!raw) {
+    return false
+  }
+  return /^(?:theme\s*color|цветовая\s*тема|цвет\s*темы|palette|color\s*palette|design\s*style|layout\s*logic|visual\s*rhythm)\s*[:\-]/i.test(raw)
+}
+
+function cleanPresentationTextForOutput(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .filter((line) => !isPresentationMetaLine(line))
+    .join('\n')
+    .trim()
+}
+
 function detectPresentationPalette(order, text) {
   const req = order?.frozen_requirements || {}
   const style = normalizeText(req.style)
@@ -353,7 +369,7 @@ function extractSlideParts(slideText, index) {
   const lines = String(slideText || '')
     .split(/\r?\n/)
     .map(cleanMarkdownLine)
-    .filter(Boolean)
+    .filter((line) => line && !isPresentationMetaLine(line))
 
   const first = lines[0] || `Slide ${index + 1}`
   const title = first.replace(/^(slide|слайд)\s*\d+\s*[:.-]?\s*/i, '') || first
@@ -365,6 +381,16 @@ function extractSlideParts(slideText, index) {
     const urlMatch = line.match(/^(?:image\s*url|image\s*link|url|ссылка\s*на\s*изображение|ссылка\s*на\s*фото)\s*[:\-]\s*(https?:\/\/\S+)/i)
     if (urlMatch?.[1]) {
       imageUrls.push(urlMatch[1].trim().replace(/[),.;]+$/, ''))
+      continue
+    }
+    const markdownImageMatch = line.match(/!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i)
+    if (markdownImageMatch?.[1]) {
+      imageUrls.push(markdownImageMatch[1].trim().replace(/[),.;]+$/, ''))
+      continue
+    }
+    const directImageUrlMatch = line.match(/\b(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif|avif|svg)(?:\?\S*)?)/i)
+    if (directImageUrlMatch?.[1]) {
+      imageUrls.push(directImageUrlMatch[1].trim().replace(/[),.;]+$/, ''))
       continue
     }
     const imageMatch = line.match(/^(?:image idea|image|illustration|photo|изображение|картинка|иллюстрация|фото)\s*[:\-]\s*(.+)$/i)
@@ -594,8 +620,8 @@ function drawSlideToCanvas(slideText, index, total, options = {}) {
 
 async function buildPresentationPdfBlob(order, text) {
   const { jsPDF } = await import('jspdf')
-  const slides = splitPresentationSlides(text, order)
   const palette = detectPresentationPalette(order, text)
+  const slides = splitPresentationSlides(cleanPresentationTextForOutput(text), order)
   const withIllustration = arePresentationImagesRequested(order, text)
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4', compress: true })
   const width = pdf.internal.pageSize.getWidth()

@@ -24,7 +24,6 @@ import {
   createOrder,
   exportOrderResultAsFile,
   getOrderForUser,
-  inspectOrderResult,
   listUserOrders,
   markPaidAndStart,
   purgeExpiredOrders,
@@ -155,9 +154,11 @@ const resultPreview = reactive({
   objectUrl: '',
   docxHtml: '',
   text: '',
-  error: ''
+  error: '',
+  blob: null
 })
 let resultPreviewUrlToken = ''
+let resultPreviewRequestId = 0
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
     return 'Скачать результат'
@@ -169,6 +170,14 @@ const downloadResultButtonLabel = computed(() => {
     return 'Скачать текст доклада'
   }
   return 'Скачать результат'
+})
+const canDownloadCurrentResult = computed(() => {
+  return (
+    hasResultText.value &&
+    resultPreview.status === 'ready' &&
+    Boolean(resultPreview.blob) &&
+    Boolean(resultPreview.filename)
+  )
 })
 
 const promptHintText = computed(() => {
@@ -230,29 +239,43 @@ function resetResultPreview() {
   resultPreview.docxHtml = ''
   resultPreview.text = ''
   resultPreview.error = ''
+  resultPreview.blob = null
 }
 
 async function syncResultPreviewFromOrder(order) {
+  const requestId = ++resultPreviewRequestId
   resetResultPreview()
   if (!order) {
     return
   }
 
   resultPreview.status = 'loading'
-  const inspected = inspectOrderResult(order)
-  if (inspected.kind !== 'file') {
-    resultPreview.status = 'ready'
+  resultPreview.text = String(order.result_text || '')
+
+  let inspected
+  try {
+    inspected = await exportOrderResultAsFile(order)
+  } catch (error) {
+    if (requestId !== resultPreviewRequestId) {
+      return
+    }
+    resultPreview.status = 'error'
     resultPreview.kind = 'text'
-    resultPreview.text = String(inspected.text || '')
+    resultPreview.error = `Не удалось подготовить файл для скачивания: ${extractErrorMessage(error)}`
     return
   }
 
+  if (requestId !== resultPreviewRequestId) {
+    return
+  }
+
+  resultPreview.blob = inspected.blob
   resultPreview.filename = inspected.filename
   resultPreview.mimeType = String(inspected.blob?.type || '').toLowerCase()
 
   if (resultPreview.mimeType.includes('application/pdf')) {
     resultPreview.kind = 'pdf'
-    resultPreviewUrlToken = window.URL.createObjectURL(inspected.blob)
+    resultPreviewUrlToken = window.URL.createObjectURL(resultPreview.blob)
     resultPreview.objectUrl = resultPreviewUrlToken
     resultPreview.status = 'ready'
     return
@@ -263,13 +286,19 @@ async function syncResultPreviewFromOrder(order) {
     resultPreview.filename.toLowerCase().endsWith('.docx')
   ) {
     try {
-      const arrayBuffer = await inspected.blob.arrayBuffer()
+      const arrayBuffer = await resultPreview.blob.arrayBuffer()
       const converted = await mammoth.convertToHtml({ arrayBuffer })
+      if (requestId !== resultPreviewRequestId) {
+        return
+      }
       resultPreview.kind = 'docx'
       resultPreview.docxHtml = converted.value || ''
       resultPreview.status = 'ready'
       return
     } catch (error) {
+      if (requestId !== resultPreviewRequestId) {
+        return
+      }
       resultPreview.kind = 'file'
       resultPreview.error = `Не удалось отрисовать DOCX в браузере: ${extractErrorMessage(error)}`
       resultPreview.status = 'ready'
@@ -820,12 +849,17 @@ async function downloadCurrentResult() {
   if (!selectedOrder.value || !hasResultText.value) {
     return
   }
+  if (!canDownloadCurrentResult.value) {
+    showNotice('Файл можно будет скачать совсем скоро.', 'info')
+    return
+  }
   const preparedWindow =
     selectedOrder.value.service_type === SERVICE_PRESENTATION
       ? openDownloadWindow(`presentation_${selectedOrder.value.id || 'result'}.pdf`)
       : null
   try {
-    const { blob, filename } = await exportOrderResultAsFile(selectedOrder.value)
+    const blob = resultPreview.blob
+    const filename = resultPreview.filename
     if (
       preparedWindow &&
       String(blob?.type || '').includes('application/pdf') &&
@@ -1043,7 +1077,7 @@ onMounted(() => {
       <div v-else-if="screen === 'processing'" class="stack processing">
         <p class="eyebrow">Заказ в работе</p>
         <h2>Заказ в среднем собирается в течение 5-7 минут</h2>
-        <p>Вы можете закрыть окно: готовый результат по заказу (реферат, доклад, презентация и другие работы) появится в папке «Мои заказы».</p>
+        <p>Не закрывайте это окно и не обновляйте страницу, пока заказ собирается: так процесс генерации не прервется. Когда работа будет готова, результат появится в папке «Мои заказы».</p>
         <p>Если что-то пошло не так, напишите в поддержку.</p>
         <div class="loader" aria-hidden="true" />
       </div>
@@ -1086,7 +1120,10 @@ onMounted(() => {
         </div>
         <div v-if="hasResultText" class="row">
           <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
-          <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
+          <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
+            {{ downloadResultButtonLabel }}
+          </button>
+          <span v-else class="muted">Файл можно будет скачать совсем скоро</span>
         </div>
 
         <div class="row">
@@ -1161,7 +1198,10 @@ onMounted(() => {
         </div>
         <div class="row">
           <button class="btn btn-primary" @click="copyCurrentResult">Скопировать текст</button>
-          <button class="btn btn-secondary" @click="downloadCurrentResult">{{ downloadResultButtonLabel }}</button>
+          <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
+            {{ downloadResultButtonLabel }}
+          </button>
+          <span v-else class="muted">Файл можно будет скачать совсем скоро</span>
           <button class="btn btn-ghost" @click="screen = 'order-details'">Назад к заказу</button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import mammoth from 'mammoth/mammoth.browser'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -162,15 +162,15 @@ let resultPreviewUrlToken = ''
 let resultPreviewRequestId = 0
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
-    return 'РЎРєР°С‡Р°С‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚'
+    return 'Скачать результат'
   }
   if (selectedOrder.value.service_type === SERVICE_PRESENTATION) {
-    return 'РЎРєР°С‡Р°С‚СЊ РјР°С‚РµСЂРёР°Р» РїСЂРµР·РµРЅС‚Р°С†РёРё'
+    return 'Скачать материал презентации'
   }
   if (selectedOrder.value.service_type === SERVICE_REPORT) {
-    return 'РЎРєР°С‡Р°С‚СЊ С‚РµРєСЃС‚ РґРѕРєР»Р°РґР°'
+    return 'Скачать текст доклада'
   }
-  return 'РЎРєР°С‡Р°С‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚'
+  return 'Скачать результат'
 })
 const canDownloadCurrentResult = computed(() => {
   return (
@@ -189,22 +189,22 @@ const promptHintText = computed(() => {
   }
   if (currentField.value.inputType === 'attachments') {
     return (
-      'РњРѕР¶РЅРѕ РѕС‚РїСЂР°РІРёС‚СЊ С‚РµРєСЃС‚, РґРѕРєСѓРјРµРЅС‚ РёР»Рё СЃРєСЂРёРЅС€РѕС‚.\n' +
-      'Р•СЃР»Рё РЅРµ Р·РЅР°РµС‚Рµ, РЅР°РїРёС€РёС‚Рµ: В«РЅР° С‚РІРѕРµ СѓСЃРјРѕС‚СЂРµРЅРёРµВ».\n' +
-      'РљРѕРіРґР° Р·Р°РєРѕРЅС‡РёС‚Рµ РїСЂРёРєСЂРµРїР»СЏС‚СЊ РјР°С‚РµСЂРёР°Р»С‹, РѕС‚РїСЂР°РІСЊС‚Рµ В«РіРѕС‚РѕРІРѕВ» РёР»Рё РЅР°РїРёС€РёС‚Рµ РєРѕРјРјРµРЅС‚Р°СЂРёР№.'
+      'Можно отправить текст, документ или скриншот.\n' +
+      'Если не знаете, напишите: «на твое усмотрение».\n' +
+      'Когда закончите прикреплять материалы, отправьте «готово» или напишите комментарий.'
     )
   }
   if (currentField.value.inputType === 'choice') {
-    return 'РњРѕР¶РЅРѕ РЅР°Р¶Р°С‚СЊ РєРЅРѕРїРєСѓ РёР»Рё РЅР°РїРёСЃР°С‚СЊ РѕС‚РІРµС‚ С‚РµРєСЃС‚РѕРј.'
+    return 'Можно нажать кнопку или написать ответ текстом.'
   }
-  return 'Р•СЃР»Рё РЅРµ Р·РЅР°РµС‚Рµ, РЅР°РїРёС€РёС‚Рµ: В«РЅР° С‚РІРѕРµ СѓСЃРјРѕС‚СЂРµРЅРёРµВ».\nРћС‚РїСЂР°РІСЊС‚Рµ РѕС‚РІРµС‚ РѕРґРЅРёРј СЃРѕРѕР±С‰РµРЅРёРµРј.'
+  return 'Если не знаете, напишите: «на твое усмотрение».\nОтправьте ответ одним сообщением.'
 })
 
 const currentStepPrompt = computed(() => {
   if (!selectedOffer.value || !currentField.value) {
     return ''
   }
-  return `РЁР°Рі ${stepIndex.value + 1}/${selectedOffer.value.fields.length}\n${currentField.value.prompt}`
+  return `Шаг ${stepIndex.value + 1}/${selectedOffer.value.fields.length}\n${currentField.value.prompt}`
 })
 
 function showNotice(text, type = 'info') {
@@ -220,11 +220,11 @@ function showNotice(text, type = 'info') {
 
 function extractErrorMessage(error) {
   if (!error) {
-    return 'РќРµРёР·РІРµСЃС‚РЅР°СЏ С‚РµС…РЅРёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°.'
+    return 'Неизвестная техническая ошибка.'
   }
   const raw = String(error.message || error || '').trim()
   if (!raw) {
-    return 'РќРµРёР·РІРµСЃС‚РЅР°СЏ С‚РµС…РЅРёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°.'
+    return 'Неизвестная техническая ошибка.'
   }
   return raw.length > 220 ? `${raw.slice(0, 217)}...` : raw
 }
@@ -278,7 +278,7 @@ async function syncResultPreviewFromOrder(order) {
     }
     resultPreview.status = 'error'
     resultPreview.kind = 'text'
-    resultPreview.error = `РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ С„Р°Р№Р» РґР»СЏ СЃРєР°С‡РёРІР°РЅРёСЏ: ${extractErrorMessage(error)}`
+    resultPreview.error = `Не удалось подготовить файл для скачивания: ${extractErrorMessage(error)}`
     return
   }
 
@@ -318,7 +318,7 @@ async function syncResultPreviewFromOrder(order) {
         return
       }
       resultPreview.kind = 'file'
-      resultPreview.error = `РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРёСЃРѕРІР°С‚СЊ DOCX РІ Р±СЂР°СѓР·РµСЂРµ: ${extractErrorMessage(error)}`
+      resultPreview.error = `Не удалось отрисовать DOCX в браузере: ${extractErrorMessage(error)}`
       resultPreview.status = 'ready'
       return
     }
@@ -460,7 +460,7 @@ function handleFileAttach(event) {
   const files = Array.from(event.target.files || [])
   for (const file of files) {
     const isImage = String(file.type || '').startsWith('image/')
-    const title = isImage ? '[РЎРєСЂРёРЅС€РѕС‚]' : '[Р¤Р°Р№Р»]'
+    const title = isImage ? '[Скриншот]' : '[Файл]'
     attachmentNotes.value.push(`${title} ${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`)
   }
   event.target.value = ''
@@ -475,7 +475,7 @@ function submitDraftAnswer() {
   if (field.inputType === 'choice') {
     const selected = matchChoiceFromText(answerInput.value, field.choices)
     if (!selected) {
-      showNotice('Р”Р»СЏ СЌС‚РѕРіРѕ С€Р°РіР° РІС‹Р±РµСЂРёС‚Рµ РІР°СЂРёР°РЅС‚ РєРЅРѕРїРєРѕР№ РёР»Рё РЅР°РїРёС€РёС‚Рµ РѕС‚РІРµС‚ (РЅР°РїСЂРёРјРµСЂ: В«РґР°В», В«РЅРµС‚В», В«СЃС‚СЂРѕРіРёР№В»).', 'warn')
+      showNotice('Для этого шага выберите вариант кнопкой или напишите ответ (например: «да», «нет», «строгий»).', 'warn')
       return
     }
     formData[field.key] = selected
@@ -486,7 +486,7 @@ function submitDraftAnswer() {
   if (field.inputType === 'attachments') {
     const raw = answerInput.value.trim()
     const normalized = normalizeUserText(raw)
-    const isDone = ['РіРѕС‚РѕРІРѕ', 'ok', 'РѕРє', 'done'].includes(normalized)
+    const isDone = ['готово', 'ok', 'ок', 'done'].includes(normalized)
     const parts = []
     if (raw && !isDone) {
       parts.push(raw)
@@ -495,10 +495,10 @@ function submitDraftAnswer() {
       parts.push(...attachmentNotes.value)
     }
     if (isDone && parts.length === 0) {
-      parts.push('РњР°С‚РµСЂРёР°Р»С‹ РЅРµ РїСЂРёР»РѕР¶РµРЅС‹.')
+      parts.push('Материалы не приложены.')
     }
     if (!isDone && parts.length === 0) {
-      showNotice('Р”РѕР±Р°РІСЊС‚Рµ С‚РµРєСЃС‚, РґРѕРєСѓРјРµРЅС‚ РёР»Рё СЃРєСЂРёРЅС€РѕС‚.', 'warn')
+      showNotice('Добавьте текст, документ или скриншот.', 'warn')
       return
     }
     formData[field.key] = parts.join('\n').trim()
@@ -508,7 +508,7 @@ function submitDraftAnswer() {
 
   const raw = answerInput.value.trim()
   if (!raw) {
-    showNotice('РћС‚РІРµС‚ РЅРµ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј.', 'warn')
+    showNotice('Ответ не должен быть пустым.', 'warn')
     return
   }
   formData[field.key] = raw
@@ -526,7 +526,7 @@ function restartDraftFromStart() {
 
 function createPaymentCard() {
   if (!selectedServiceKey.value || !selectedOffer.value) {
-    showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР±СЂР°С‚СЊ Р·Р°РєР°Р·. РќР°С‡РЅРёС‚Рµ Р·Р°РЅРѕРІРѕ.', 'error')
+    showNotice('Не удалось собрать заказ. Начните заново.', 'error')
     goServicePicker()
     return
   }
@@ -552,7 +552,7 @@ function cancelPaymentFlow() {
   const canceled = cancelOrder(currentOrderId.value)
   if (canceled) {
     selectedOrder.value = canceled
-    showNotice(`Р—Р°РєР°Р· ${publicOrderNo(Number(canceled.id), Number(canceled.user_id))} РѕС‚РјРµРЅРµРЅ.`, 'info')
+    showNotice(`Заказ ${publicOrderNo(Number(canceled.id), Number(canceled.user_id))} отменен.`, 'info')
   }
   refreshMyOrders()
   goMenu()
@@ -564,7 +564,7 @@ async function confirmPaymentFlow() {
   }
   const started = markPaidAndStart(currentOrderId.value)
   if (!started) {
-    showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґС‚РІРµСЂРґРёС‚СЊ РѕРїР»Р°С‚Сѓ.', 'error')
+    showNotice('Не удалось подтвердить оплату.', 'error')
     return
   }
   selectedOrder.value = started
@@ -581,7 +581,7 @@ async function runGenerationForOrder(order, options = {}) {
     await ensurePresentationFileBuilt(order, generated)
     const ready = setReady(Number(order.id), generated, APP_CONFIG.revisionWindowHours)
     if (!ready) {
-      showNotice('РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ СЂРµР·СѓР»СЊС‚Р°С‚Р°. РџРѕРїСЂРѕР±СѓР№С‚Рµ РѕР±РЅРѕРІРёС‚СЊ СЃС‚СЂР°РЅРёС†Сѓ.', 'error')
+      showNotice('Ошибка сохранения результата. Попробуйте обновить страницу.', 'error')
       return
     }
     selectedOrder.value = ready
@@ -615,7 +615,7 @@ async function retryCurrentGeneration() {
 function openOrder(orderId) {
   const order = getOrderForUser(orderId, activeUserId.value)
   if (!order) {
-    showNotice('Р—Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ.', 'warn')
+    showNotice('Заказ не найден.', 'warn')
     refreshMyOrders()
     return
   }
@@ -636,13 +636,13 @@ function refreshCurrentOrder() {
 
 function refreshMyOrdersManual() {
   refreshMyOrders()
-  showNotice('РЎРїРёСЃРѕРє Р·Р°РєР°Р·РѕРІ РѕР±РЅРѕРІР»РµРЅ.', 'info')
+  showNotice('Список заказов обновлен.', 'info')
 }
 
 function refreshCurrentOrderManual() {
   refreshCurrentOrder()
   void syncResultPreviewFromOrder(selectedOrder.value)
-  showNotice('Р—Р°РєР°Р· РѕР±РЅРѕРІР»РµРЅ.', 'info')
+  showNotice('Заказ обновлен.', 'info')
 }
 
 function canRequestRevision(order) {
@@ -667,7 +667,7 @@ function beginRevision() {
     return
   }
   if (!canRequestRevision(selectedOrder.value)) {
-    showNotice('РћРєРЅРѕ РїСЂР°РІРѕРє Р·Р°РєСЂС‹С‚Рѕ РёР»Рё Р»РёРјРёС‚ РёСЃС‡РµСЂРїР°РЅ.', 'warn')
+    showNotice('Окно правок закрыто или лимит исчерпан.', 'warn')
     return
   }
   revisionInput.value = ''
@@ -677,7 +677,7 @@ function beginRevision() {
 async function submitRevision() {
   const text = revisionInput.value.trim()
   if (!text) {
-    showNotice('РўРµРєСЃС‚ РїСЂР°РІРєРё РїСѓСЃС‚РѕР№. РћРїРёС€РёС‚Рµ, С‡С‚Рѕ РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ.', 'warn')
+    showNotice('Текст правки пустой. Опишите, что нужно изменить.', 'warn')
     return
   }
   if (!selectedOrder.value) {
@@ -685,20 +685,20 @@ async function submitRevision() {
   }
   if (isNewOrderChangeRequest(text)) {
     screen.value = 'menu'
-    showNotice('Р—Р°РїСЂРѕСЃ РїРѕС…РѕР¶ РЅР° РЅРѕРІС‹Р№ Р·Р°РєР°Р·. РћС„РѕСЂРјРёС‚Рµ РЅРѕРІС‹Р№ Р·Р°РєР°Р· С‡РµСЂРµР· РјРµРЅСЋ.', 'warn')
+    showNotice('Запрос похож на новый заказ. Оформите новый заказ через меню.', 'warn')
     return
   }
   if (!canRequestRevision(selectedOrder.value)) {
     closeOrder(Number(selectedOrder.value.id))
     refreshCurrentOrder()
     screen.value = 'order-details'
-    showNotice('РћРєРЅРѕ РґР»СЏ РїСЂР°РІРѕРє Р·Р°РєСЂС‹С‚Рѕ. Р—Р°РєР°Р· Р·Р°РІРµСЂС€РµРЅ.', 'warn')
+    showNotice('Окно для правок закрыто. Заказ завершен.', 'warn')
     return
   }
 
   const inRevision = setInRevision(Number(selectedOrder.value.id))
   if (!inRevision) {
-    showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°С‡Р°С‚СЊ РїСЂР°РІРєРё.', 'error')
+    showNotice('Не удалось начать правки.', 'error')
     return
   }
 
@@ -709,7 +709,7 @@ async function submitRevision() {
     const closeFlag = Number(inRevision.revision_used) + 1 >= Number(inRevision.revision_limit)
     const updated = applyRevisionResult(Number(inRevision.id), text, revisedText, closeFlag)
     if (!updated) {
-      showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїСЂР°РІРєРё. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰Рµ СЂР°Р·.', 'error')
+      showNotice('Не удалось сохранить правки. Попробуйте еще раз.', 'error')
       return
     }
     selectedOrder.value = updated
@@ -721,7 +721,7 @@ async function submitRevision() {
       showNotice(resultMessageText(updated), 'success')
     }
   } catch (error) {
-    showNotice(`РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРёРјРµРЅРёС‚СЊ РїСЂР°РІРєСѓ: ${extractErrorMessage(error)}`, 'error')
+    showNotice(`Не удалось применить правку: ${extractErrorMessage(error)}`, 'error')
   } finally {
     busy.value = false
   }
@@ -743,12 +743,12 @@ function acceptCurrentOrderFlow() {
 function submitFeedback() {
   const text = feedbackInput.value.trim()
   if (!text) {
-    showNotice('РќР°РїРёС€РёС‚Рµ РІР°С€ РѕС‚Р·С‹РІ РѕРґРЅРёРј СЃРѕРѕР±С‰РµРЅРёРµРј.', 'warn')
+    showNotice('Напишите ваш отзыв одним сообщением.', 'warn')
     return
   }
   saveFeedback({ text, userId: activeUserId.value })
   feedbackInput.value = ''
-  showNotice('РЎРїР°СЃРёР±Рѕ Р·Р° РѕС‚Р·С‹РІ. Р­С‚Рѕ РїРѕРјРѕРіР°РµС‚ СѓР»СѓС‡С€Р°С‚СЊ СЃРµСЂРІРёСЃ.', 'success')
+  showNotice('Спасибо за отзыв. Это помогает улучшать сервис.', 'success')
   goMenu()
 }
 
@@ -796,16 +796,16 @@ async function downloadCurrentResult() {
     return
   }
   if (!canDownloadCurrentResult.value) {
-    showNotice('Р¤Р°Р№Р» РјРѕР¶РЅРѕ Р±СѓРґРµС‚ СЃРєР°С‡Р°С‚СЊ СЃРѕРІСЃРµРј СЃРєРѕСЂРѕ.', 'info')
+    showNotice('Файл можно будет скачать совсем скоро.', 'info')
     return
   }
   try {
     const blob = resultPreview.blob
     const filename = resultPreview.filename
     const mode = await saveResultFile(blob, filename)
-    showNotice(mode === 'downloaded' ? 'РЎРєР°С‡РёРІР°РЅРёРµ Р·Р°РїСѓС‰РµРЅРѕ.' : 'Р¤Р°Р№Р» РіРѕС‚РѕРІ Рє СЃРєР°С‡РёРІР°РЅРёСЋ.', 'info')
+    showNotice(mode === 'downloaded' ? 'Скачивание запущено.' : 'Файл готов к скачиванию.', 'info')
   } catch {
-    showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєР°С‡Р°С‚СЊ С„Р°Р№Р». РџРѕРїСЂРѕР±СѓР№С‚Рµ РѕС‚РєСЂС‹С‚СЊ Р·Р°РєР°Р· РµС‰Рµ СЂР°Р· РёР»Рё РЅР°РїРёС€РёС‚Рµ РІ РїРѕРґРґРµСЂР¶РєСѓ.', 'warn')
+    showNotice('Не удалось скачать файл. Попробуйте открыть заказ еще раз или напишите в поддержку.', 'warn')
   }
 }
 
@@ -823,9 +823,9 @@ async function copyCurrentResult() {
   }
   try {
     await navigator.clipboard.writeText(text)
-    showNotice('Р РµР·СѓР»СЊС‚Р°С‚ СЃРєРѕРїРёСЂРѕРІР°РЅ РІ Р±СѓС„РµСЂ РѕР±РјРµРЅР°.', 'success')
+    showNotice('Результат скопирован в буфер обмена.', 'success')
   } catch {
-    showNotice('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєРѕРїРёСЂРѕРІР°С‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё. Р’С‹РґРµР»РёС‚Рµ С‚РµРєСЃС‚ Рё СЃРєРѕРїРёСЂСѓР№С‚Рµ РІСЂСѓС‡РЅСѓСЋ.', 'warn')
+    showNotice('Не удалось скопировать автоматически. Выделите текст и скопируйте вручную.', 'warn')
   }
 }
 
@@ -874,7 +874,7 @@ onBeforeUnmount(() => {
 onMounted(() => {
   activeUserId.value = getOrCreateActiveUserId()
   if (route.query.adminDenied === '1') {
-    showNotice('РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ РґР»СЏ РІС…РѕРґР° РІ Р°РґРјРёРЅРєСѓ.', 'warn')
+    showNotice('Неверный пароль для входа в админку.', 'warn')
     const nextQuery = { ...route.query }
     delete nextQuery.adminDenied
     router.replace({ path: '/', query: nextQuery })
@@ -892,11 +892,11 @@ onMounted(() => {
   <main class="shell">
     <header class="app-header">
       <div>
-        <h1>РљР»РёРµРЅС‚СЃРєРёР№ РєР°Р±РёРЅРµС‚</h1>
+        <h1>Клиентский кабинет</h1>
       </div>
       <div class="header-meta">
-        <p>РљР»РёРµРЅС‚: <strong>{{ activeUserId }}</strong></p>
-        <RouterLink class="btn btn-ghost" to="/admin">РђРґРјРёРЅРєР°</RouterLink>
+        <p>Клиент: <strong>{{ activeUserId }}</strong></p>
+        <RouterLink class="btn btn-ghost" to="/admin">Админка</RouterLink>
       </div>
     </header>
 
@@ -919,12 +919,12 @@ onMounted(() => {
         <article v-for="service in serviceItems" :key="service.key" class="service-item">
           <div class="service-row">
             <h2>{{ service.label }}</h2>
-            <p class="price">{{ service.priceRub }} в‚Ѕ</p>
+            <p class="price">{{ service.priceRub }} ₽</p>
           </div>
           <p>{{ service.shortDescription }}</p>
-          <button class="btn btn-primary" @click="startDraft(service.key)">РџСЂРѕРґРѕР»Р¶РёС‚СЊ РѕС„РѕСЂРјР»РµРЅРёРµ</button>
+          <button class="btn btn-primary" @click="startDraft(service.key)">Продолжить оформление</button>
         </article>
-        <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+        <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
       </div>
 
       <div v-else-if="screen === 'draft' && selectedOffer && currentField" class="stack">
@@ -947,13 +947,13 @@ onMounted(() => {
           v-model="answerInput"
           rows="5"
           class="input"
-          :placeholder="currentField.inputType === 'choice' ? 'РР»Рё РІРІРµРґРёС‚Рµ РѕС‚РІРµС‚ С‚РµРєСЃС‚РѕРј' : 'Р’РІРµРґРёС‚Рµ РѕС‚РІРµС‚'"
+          :placeholder="currentField.inputType === 'choice' ? 'Или введите ответ текстом' : 'Введите ответ'"
         />
 
         <div v-if="currentField.inputType === 'attachments'" class="stack-small">
           <label class="file-label">
             <input type="file" multiple @change="handleFileAttach" />
-            <span>РџСЂРёРєСЂРµРїРёС‚СЊ С„Р°Р№Р»С‹</span>
+            <span>Прикрепить файлы</span>
           </label>
           <ul v-if="attachmentNotes.length" class="attachment-list">
             <li v-for="(note, idx) in attachmentNotes" :key="`${note}-${idx}`">{{ note }}</li>
@@ -961,58 +961,58 @@ onMounted(() => {
         </div>
 
         <div class="row">
-          <button class="btn btn-primary" @click="submitDraftAnswer">Р”Р°Р»СЊС€Рµ</button>
-          <button class="btn btn-ghost" @click="goServicePicker">РћС‚РјРµРЅР°</button>
+          <button class="btn btn-primary" @click="submitDraftAnswer">Дальше</button>
+          <button class="btn btn-ghost" @click="goServicePicker">Отмена</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'draft-review'" class="stack">
         <pre class="mono-block">{{ reviewText }}</pre>
         <div class="row">
-          <button class="btn btn-primary" @click="goTerms">вњ… Р’СЃРµ РІРµСЂРЅРѕ</button>
-          <button class="btn btn-secondary" @click="restartDraftFromStart">вњЏ РР·РјРµРЅРёС‚СЊ РґР°РЅРЅС‹Рµ</button>
-          <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+          <button class="btn btn-primary" @click="goTerms">✅ Все верно</button>
+          <button class="btn btn-secondary" @click="restartDraftFromStart">✏ Изменить данные</button>
+          <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'terms'" class="stack">
         <pre class="mono-block">{{ termsText }}</pre>
         <div class="row">
-          <button class="btn btn-primary" @click="createPaymentCard">рџ’і РћРїР»Р°С‚РёС‚СЊ</button>
-          <button class="btn btn-secondary" @click="restartDraftFromStart">вњЏ РР·РјРµРЅРёС‚СЊ РґР°РЅРЅС‹Рµ</button>
-          <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+          <button class="btn btn-primary" @click="createPaymentCard">💳 Оплатить</button>
+          <button class="btn btn-secondary" @click="restartDraftFromStart">✏ Изменить данные</button>
+          <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'payment' && selectedOrder" class="stack">
         <pre class="mono-block">{{ paymentCardText }}</pre>
         <div class="row">
-          <button class="btn btn-primary" :disabled="busy" @click="confirmPaymentFlow">вњ… РЇ РѕРїР»Р°С‚РёР»(Р°)</button>
-          <button class="btn btn-ghost" :disabled="busy" @click="cancelPaymentFlow">вќЊ РћС‚РјРµРЅРёС‚СЊ Р·Р°РєР°Р·</button>
+          <button class="btn btn-primary" :disabled="busy" @click="confirmPaymentFlow">✅ Я оплатил(а)</button>
+          <button class="btn btn-ghost" :disabled="busy" @click="cancelPaymentFlow">❌ Отменить заказ</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'processing'" class="stack processing">
-        <p class="eyebrow">Р—Р°РєР°Р· РІ СЂР°Р±РѕС‚Рµ</p>
-        <h2>Р—Р°РєР°Р· РІ СЃСЂРµРґРЅРµРј СЃРѕР±РёСЂР°РµС‚СЃСЏ РІ С‚РµС‡РµРЅРёРµ 5-7 РјРёРЅСѓС‚</h2>
-        <p>РќРµ Р·Р°РєСЂС‹РІР°Р№С‚Рµ СЌС‚Рѕ РѕРєРЅРѕ Рё РЅРµ РѕР±РЅРѕРІР»СЏР№С‚Рµ СЃС‚СЂР°РЅРёС†Сѓ, РїРѕРєР° Р·Р°РєР°Р· СЃРѕР±РёСЂР°РµС‚СЃСЏ: С‚Р°Рє РїСЂРѕС†РµСЃСЃ РіРµРЅРµСЂР°С†РёРё РЅРµ РїСЂРµСЂРІРµС‚СЃСЏ. РљРѕРіРґР° СЂР°Р±РѕС‚Р° Р±СѓРґРµС‚ РіРѕС‚РѕРІР°, СЂРµР·СѓР»СЊС‚Р°С‚ РїРѕСЏРІРёС‚СЃСЏ РІ РїР°РїРєРµ В«РњРѕРё Р·Р°РєР°Р·С‹В».</p>
-        <p>Р•СЃР»Рё С‡С‚Рѕ-С‚Рѕ РїРѕС€Р»Рѕ РЅРµ С‚Р°Рє, РЅР°РїРёС€РёС‚Рµ РІ РїРѕРґРґРµСЂР¶РєСѓ.</p>
+        <p class="eyebrow">Заказ в работе</p>
+        <h2>Заказ в среднем собирается в течение 5-7 минут</h2>
+        <p>Не закрывайте это окно и не обновляйте страницу, пока заказ собирается: так процесс генерации не прервется. Когда работа будет готова, результат появится в папке «Мои заказы».</p>
+        <p>Если что-то пошло не так, напишите в поддержку.</p>
         <div class="loader" aria-hidden="true" />
       </div>
 
       <div v-else-if="screen === 'orders'" class="stack">
-        <h2>РњРѕРё Р·Р°РєР°Р·С‹</h2>
-        <p class="muted">РҐСЂР°РЅРµРЅРёРµ Р·Р°РєР°Р·РѕРІ: 72 С‡Р°СЃР°, Р·Р°С‚РµРј РѕРЅРё Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё СѓРґР°Р»СЏСЋС‚СЃСЏ.</p>
+        <h2>Мои заказы</h2>
+        <p class="muted">Хранение заказов: 72 часа, затем они автоматически удаляются.</p>
         <p v-if="!myOrders.length">{{ myOrdersEmptyText() }}</p>
         <ul v-else class="orders-list">
           <li v-for="order in myOrders" :key="order.id">
             <p>{{ orderShortRow(order) }}</p>
-            <button class="btn btn-secondary" @click="openOrder(order.id)">РћС‚РєСЂС‹С‚СЊ</button>
+            <button class="btn btn-secondary" @click="openOrder(order.id)">Открыть</button>
           </li>
         </ul>
         <div class="row">
-          <button class="btn btn-secondary" @click="refreshMyOrdersManual">рџ”„ РћР±РЅРѕРІРёС‚СЊ</button>
-          <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+          <button class="btn btn-secondary" @click="refreshMyOrdersManual">🔄 Обновить</button>
+          <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>
       </div>
 
@@ -1020,25 +1020,24 @@ onMounted(() => {
         <pre class="mono-block">{{ currentOrderDetails }}</pre>
         <div v-if="hasResultText" class="result-block">
           <p class="muted" v-if="resultPreview.filename">
-            Р¤Р°Р№Р»: <strong>{{ resultPreview.filename }}</strong>
+            Файл: <strong>{{ resultPreview.filename }}</strong>
           </p>
-          <p class="muted" v-if="resultPreview.status === 'loading'">РџРѕРґРіРѕС‚РѕРІРєР° РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂР°...</p>
-          
+          <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
           <iframe
             v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
             class="result-iframe"
             :src="resultPreview.objectUrl"
-            title="РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ PDF"
+            title="Предпросмотр PDF"
           />
           <div v-else-if="resultPreview.kind === 'docx'" class="docx-preview" v-html="resultPreview.docxHtml" />
           <p v-else-if="resultPreview.kind === 'file'" class="muted">
-            РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ СЌС‚РѕРіРѕ С„РѕСЂРјР°С‚Р° РІ Р±СЂР°СѓР·РµСЂРµ РЅРµРґРѕСЃС‚СѓРїРµРЅ. РЎРєР°С‡Р°Р№С‚Рµ С„Р°Р№Р» РґР»СЏ РїСЂРѕСЃРјРѕС‚СЂР°.
+            Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
           </p>
           <pre v-else class="result-viewer">{{ resultPreview.text }}</pre>
           <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
         </div>
         <div v-if="hasResultText" class="row">
-          <button class="btn btn-primary" @click="openResultViewer">РћС‚РєСЂС‹С‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚</button>
+          <button class="btn btn-primary" @click="openResultViewer">Открыть результат</button>
           <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
             {{ downloadResultButtonLabel }}
           </button>
@@ -1050,14 +1049,14 @@ onMounted(() => {
             class="btn btn-primary"
             @click="screen = 'payment'"
           >
-            рџ’і РџРµСЂРµР№С‚Рё Рє РѕРїР»Р°С‚Рµ
+            💳 Перейти к оплате
           </button>
           <button
             v-if="[ORDER_STATUS_READY, ORDER_STATUS_IN_REVISION].includes(selectedOrder.status)"
             class="btn btn-primary"
             @click="acceptCurrentOrderFlow"
           >
-            вњ… РџСЂРёРЅСЏС‚СЊ СЂР°Р±РѕС‚Сѓ
+            ✅ Принять работу
           </button>
           <button
             v-if="selectedOrder.status === ORDER_STATUS_IN_PROGRESS"
@@ -1065,18 +1064,18 @@ onMounted(() => {
             :disabled="busy"
             @click="retryCurrentGeneration"
           >
-            рџ”„ РџРѕРІС‚РѕСЂРёС‚СЊ РіРµРЅРµСЂР°С†РёСЋ
+            🔄 Повторить генерацию
           </button>
           <button
             v-if="canRequestRevision(selectedOrder)"
             class="btn btn-secondary"
             @click="beginRevision"
           >
-            рџ”Ѓ Р’РЅРµСЃС‚Рё РїСЂР°РІРєРё
+            🔁 Внести правки
           </button>
-          <button class="btn btn-secondary" :disabled="busy" @click="refreshCurrentOrderManual">рџ”„ РћР±РЅРѕРІРёС‚СЊ</button>
-          <button class="btn btn-ghost" @click="openMyOrders">рџ“‚ РњРѕРё Р·Р°РєР°Р·С‹</button>
-          <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+          <button class="btn btn-secondary" :disabled="busy" @click="refreshCurrentOrderManual">🔄 Обновить</button>
+          <button class="btn btn-ghost" @click="openMyOrders">📂 Мои заказы</button>
+          <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>
       </div>
 
@@ -1086,65 +1085,63 @@ onMounted(() => {
           v-model="revisionInput"
           rows="6"
           class="input"
-          placeholder="РћРїРёС€РёС‚Рµ, С‡С‚Рѕ РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ РІ С‚РµРєСѓС‰РµР№ РІРµСЂСЃРёРё"
+          placeholder="Опишите, что нужно изменить в текущей версии"
         />
         <div class="row">
-          <button class="btn btn-primary" :disabled="busy" @click="submitRevision">РћС‚РїСЂР°РІРёС‚СЊ РїСЂР°РІРєСѓ</button>
-          <button class="btn btn-ghost" :disabled="busy" @click="screen = 'order-details'">РќР°Р·Р°Рґ</button>
+          <button class="btn btn-primary" :disabled="busy" @click="submitRevision">Отправить правку</button>
+          <button class="btn btn-ghost" :disabled="busy" @click="screen = 'order-details'">Назад</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'result-view' && selectedOrder" class="stack">
-        <h2>Р РµР·СѓР»СЊС‚Р°С‚ Р·Р°РєР°Р·Р°</h2>
+        <h2>Результат заказа</h2>
         <div class="result-block">
           <p class="muted" v-if="resultPreview.filename">
-            Р¤Р°Р№Р»: <strong>{{ resultPreview.filename }}</strong>
+            Файл: <strong>{{ resultPreview.filename }}</strong>
           </p>
-          <p class="muted" v-if="resultPreview.status === 'loading'">РџРѕРґРіРѕС‚РѕРІРєР° РїСЂРµРґРїСЂРѕСЃРјРѕС‚СЂР°...</p>
-          
+          <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
           <iframe
             v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
             class="result-iframe"
             :src="resultPreview.objectUrl"
-            title="РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ PDF"
+            title="Предпросмотр PDF"
           />
           <div v-else-if="resultPreview.kind === 'docx'" class="docx-preview" v-html="resultPreview.docxHtml" />
           <p v-else-if="resultPreview.kind === 'file'" class="muted">
-            РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ СЌС‚РѕРіРѕ С„РѕСЂРјР°С‚Р° РІ Р±СЂР°СѓР·РµСЂРµ РЅРµРґРѕСЃС‚СѓРїРµРЅ. РЎРєР°С‡Р°Р№С‚Рµ С„Р°Р№Р» РґР»СЏ РїСЂРѕСЃРјРѕС‚СЂР°.
+            Предпросмотр этого формата в браузере недоступен. Скачайте файл для просмотра.
           </p>
           <pre v-else class="result-viewer">{{ resultPreview.text }}</pre>
           <p v-if="resultPreview.error" class="muted">{{ resultPreview.error }}</p>
         </div>
         <div class="row">
-          <button class="btn btn-primary" @click="copyCurrentResult">РЎРєРѕРїРёСЂРѕРІР°С‚СЊ С‚РµРєСЃС‚</button>
+          <button class="btn btn-primary" @click="copyCurrentResult">Скопировать текст</button>
           <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
             {{ downloadResultButtonLabel }}
           </button>
-          <button class="btn btn-ghost" @click="screen = 'order-details'">РќР°Р·Р°Рґ Рє Р·Р°РєР°Р·Сѓ</button>
+          <button class="btn btn-ghost" @click="screen = 'order-details'">Назад к заказу</button>
         </div>
       </div>
 
       <div v-else-if="screen === 'help'" class="stack">
         <pre class="mono-block">{{ rulesText() }}</pre>
-        <button class="btn btn-ghost" @click="goMenu">в¬… Р’ РјРµРЅСЋ</button>
+        <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
       </div>
 
       <div v-else-if="screen === 'feedback'" class="stack">
-        <h2>РћСЃС‚Р°РІРёС‚СЊ РѕС‚Р·С‹РІ</h2>
-        <textarea v-model="feedbackInput" rows="5" class="input" placeholder="РќР°РїРёС€РёС‚Рµ РѕС‚Р·С‹РІ РѕРґРЅРёРј СЃРѕРѕР±С‰РµРЅРёРµРј" />
+        <h2>Оставить отзыв</h2>
+        <textarea v-model="feedbackInput" rows="5" class="input" placeholder="Напишите отзыв одним сообщением" />
         <div class="row">
-          <button class="btn btn-primary" @click="submitFeedback">РћС‚РїСЂР°РІРёС‚СЊ</button>
-          <button class="btn btn-ghost" @click="goMenu">РћС‚РјРµРЅР°</button>
+          <button class="btn btn-primary" @click="submitFeedback">Отправить</button>
+          <button class="btn btn-ghost" @click="goMenu">Отмена</button>
         </div>
       </div>
 
       <div v-else class="stack">
-        <h2>Р­РєСЂР°РЅ РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРµРЅ</h2>
-        <button class="btn btn-primary" @click="goMenu">Р’ РіР»Р°РІРЅРѕРµ РјРµРЅСЋ</button>
+        <h2>Экран временно недоступен</h2>
+        <button class="btn btn-primary" @click="goMenu">В главное меню</button>
       </div>
     </section>
   </main>
 </template>
-
 
 

@@ -178,6 +178,7 @@ const downloadResultButtonLabel = computed(() => {
 const canDownloadCurrentResult = computed(() => {
   return (
     hasResultText.value &&
+    [ORDER_STATUS_READY, ORDER_STATUS_IN_REVISION, ORDER_STATUS_COMPLETED].includes(selectedOrder.value?.status) &&
     resultPreview.orderKey === currentOrderPreviewKey(selectedOrder.value) &&
     resultPreview.status === 'ready' &&
     Boolean(resultPreview.blob) &&
@@ -767,16 +768,7 @@ function submitFeedback() {
   goMenu()
 }
 
-function isMobileLikeBrowser() {
-  const nav = window.navigator
-  return (
-    /Android|iPhone|iPad|iPod/i.test(nav.userAgent || '') ||
-    Boolean(window.matchMedia?.('(pointer: coarse)')?.matches)
-  )
-}
-
 async function saveResultFile(blob, filename) {
-  const nav = window.navigator
   const lowerName = String(filename || '').toLowerCase()
   const ext = lowerName.endsWith('.pdf')
     ? '.pdf'
@@ -798,58 +790,11 @@ async function saveResultFile(blob, filename) {
             ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
             : 'text/plain;charset=utf-8'
   )
-  const fileDescription =
-    ext === '.pdf'
-      ? 'PDF document'
-      : ext === '.docx' || ext === '.doc'
-        ? 'Word document'
-        : ext === '.pptx'
-          ? 'PowerPoint presentation'
-          : 'Text file'
   const safeFilename = String(filename || `result${ext}`).trim() || `result${ext}`
   const typedBlob = blob?.type ? blob : new Blob([blob], { type: mime })
-
-  if (isMobileLikeBrowser() && typeof File !== 'undefined' && nav.canShare && nav.share) {
-    const file = new File([typedBlob], safeFilename, { type: mime })
-    if (nav.canShare({ files: [file] })) {
-      try {
-        await nav.share({ files: [file], title: safeFilename })
-        return 'shared'
-      } catch (error) {
-        if (String(error?.name || '').toLowerCase() === 'aborterror') {
-          return 'canceled'
-        }
-      }
-    }
-  }
-
-  // Modern desktop browsers with native file picker.
-  if (!isMobileLikeBrowser() && window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: safeFilename,
-        types: [
-          {
-            description: fileDescription,
-            accept: { [mime]: [ext] }
-          }
-        ]
-      })
-      const writable = await handle.createWritable()
-      await writable.write(typedBlob)
-      await writable.close()
-      return 'saved'
-    } catch (error) {
-      if (String(error?.name || '').toLowerCase() === 'aborterror') {
-        return 'canceled'
-      }
-    }
-  }
-
-  // Mobile-friendly fallback: share a real file via system sheet.
-
+  const url = window.URL.createObjectURL(typedBlob)
   const link = document.createElement('a')
-  link.href = window.URL.createObjectURL(typedBlob)
+  link.href = url
   link.download = safeFilename
   link.rel = 'noopener'
   link.style.display = 'none'
@@ -857,38 +802,9 @@ async function saveResultFile(blob, filename) {
   link.click()
   link.remove()
   window.setTimeout(() => {
-    window.URL.revokeObjectURL(link.href)
-  }, 60_000)
-  return 'downloaded'
-}
-
-function openDownloadWindow(filename) {
-  try {
-    const win = window.open('', '_blank')
-    if (!win) {
-      return null
-    }
-    const safeTitle = String(filename || 'presentation.pdf').replace(/[<>&"]/g, '')
-    win.document.write(
-      `<!doctype html><html><head><title>${safeTitle}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Arial,sans-serif;padding:24px"><p>Готовим файл...</p></body></html>`
-    )
-    win.document.close()
-    return win
-  } catch {
-    return null
-  }
-}
-
-function openBlobInPreparedWindow(preparedWindow, blob) {
-  if (!preparedWindow || preparedWindow.closed) {
-    return false
-  }
-  const url = window.URL.createObjectURL(blob)
-  preparedWindow.location.href = url
-  window.setTimeout(() => {
     window.URL.revokeObjectURL(url)
   }, 60_000)
-  return true
+  return 'downloaded'
 }
 
 async function downloadCurrentResult() {
@@ -899,41 +815,13 @@ async function downloadCurrentResult() {
     showNotice('Файл можно будет скачать совсем скоро.', 'info')
     return
   }
-  const preparedWindow =
-    selectedOrder.value.service_type === SERVICE_PRESENTATION
-      ? openDownloadWindow(`presentation_${selectedOrder.value.id || 'result'}.pdf`)
-      : null
   try {
     const blob = resultPreview.blob
     const filename = resultPreview.filename
-    if (
-      preparedWindow &&
-      String(blob?.type || '').includes('application/pdf') &&
-      openBlobInPreparedWindow(preparedWindow, blob)
-    ) {
-      showNotice('PDF открыт в новой вкладке. Там его можно сохранить или отправить.', 'success')
-      return
-    }
     const mode = await saveResultFile(blob, filename)
-    if (mode === 'shared') {
-      showNotice('Открылось системное меню: сохраните файл в удобное место.', 'info')
-      return
-    }
-    if (mode === 'canceled') {
-      showNotice('Скачивание отменено.', 'info')
-      return
-    }
-    if (mode === 'saved') {
-      showNotice('Файл сохранен.', 'success')
-      return
-    }
-    showNotice('Скачивание запущено. Если файл не сохранился, откройте результат и скопируйте текст.', 'info')
+    showNotice(mode === 'downloaded' ? 'Скачивание запущено.' : 'Файл готов к скачиванию.', 'info')
   } catch {
-    if (preparedWindow && !preparedWindow.closed) {
-      preparedWindow.close()
-    }
-    openResultViewer()
-    showNotice('Не удалось скачать файл в этом браузере. Открыл результат для просмотра.', 'warn')
+    showNotice('Не удалось скачать файл. Попробуйте открыть заказ еще раз или напишите в поддержку.', 'warn')
   }
 }
 
@@ -1175,7 +1063,6 @@ onMounted(() => {
           <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
             {{ downloadResultButtonLabel }}
           </button>
-          <span v-else class="muted">Файл можно будет скачать совсем скоро</span>
         </div>
 
         <div class="row">
@@ -1259,7 +1146,6 @@ onMounted(() => {
           <button v-if="canDownloadCurrentResult" class="btn btn-secondary" @click="downloadCurrentResult">
             {{ downloadResultButtonLabel }}
           </button>
-          <span v-else class="muted">Файл можно будет скачать совсем скоро</span>
           <button class="btn btn-ghost" @click="screen = 'order-details'">Назад к заказу</button>
         </div>
       </div>

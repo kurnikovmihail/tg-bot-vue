@@ -255,7 +255,7 @@ function parseBooleanLike(value) {
   if (!raw) {
     return false
   }
-  return ['yes', 'true', '1', 'on', 'required'].some((token) => raw.includes(token))
+  return ['yes', 'true', '1', 'on', 'required', 'да', 'нужно', 'требуется'].some((token) => raw.includes(token))
 }
 
 function pickPaletteByText(text) {
@@ -263,19 +263,19 @@ function pickPaletteByText(text) {
   if (!source) {
     return null
   }
-  if (/(red|crimson|scarlet|burgundy|maroon)/i.test(source)) {
+  if (/(red|crimson|scarlet|burgundy|maroon|красн|бордов|алый)/i.test(source)) {
     return PRESENTATION_PALETTES.red
   }
-  if (/(blue|navy|azure|cyan)/i.test(source)) {
+  if (/(blue|navy|azure|cyan|син|голуб)/i.test(source)) {
     return PRESENTATION_PALETTES.blue
   }
-  if (/(dark|black|graphite|charcoal)/i.test(source)) {
+  if (/(dark|black|graphite|charcoal|черн|темн)/i.test(source)) {
     return PRESENTATION_PALETTES.dark
   }
-  if (/(amber|orange|yellow|gold)/i.test(source)) {
+  if (/(amber|orange|yellow|gold|оранж|желт|золот)/i.test(source)) {
     return PRESENTATION_PALETTES.amber
   }
-  if (/(green|emerald|teal)/i.test(source)) {
+  if (/(green|emerald|teal|зелен)/i.test(source)) {
     return PRESENTATION_PALETTES.green
   }
   return null
@@ -320,17 +320,17 @@ function arePresentationImagesRequested(order, text) {
     return true
   }
   const revisionHint = normalizeText(order?.last_revision_request)
-  if (/(image|images|illustration|photo|picture)/i.test(revisionHint)) {
-    return !/(without\s+images|no\s+images)/i.test(revisionHint)
+  if (/(image|images|illustration|photo|picture|картин|изображени|иллюстрац|фото)/i.test(revisionHint)) {
+    return !/(without\s+images|no\s+images|без\s+картин|без\s+изображени|без\s+фото)/i.test(revisionHint)
   }
-  return /(image url|image idea|illustration|photo)/i.test(String(text || ''))
+  return /(image url|image idea|illustration|photo|картин|изображени|иллюстрац|фото)/i.test(String(text || ''))
 }
 
 function splitPresentationSlides(text, order) {
   const normalized = String(text || '').replace(/\r\n/g, '\n').trim()
   const wanted = Number.parseInt(String(order?.frozen_requirements?.slides_count || ''), 10)
   const marked = normalized
-    .replace(/\n(?=\s*(?:#{1,3}\s*)?(?:slide)\s*\d+)/gi, '\n---SLIDE---\n')
+    .replace(/\n(?=\s*(?:#{1,3}\s*)?(?:slide|слайд)\s*\d+)/gi, '\n---SLIDE---\n')
     .split('---SLIDE---')
     .map((part) => part.trim())
     .filter(Boolean)
@@ -356,18 +356,18 @@ function extractSlideParts(slideText, index) {
     .filter(Boolean)
 
   const first = lines[0] || `Slide ${index + 1}`
-  const title = first.replace(/^(slide)\s*\d+\s*[:.-]?\s*/i, '') || first
+  const title = first.replace(/^(slide|слайд)\s*\d+\s*[:.-]?\s*/i, '') || first
   const imageHints = []
   const imageUrls = []
   const bodyLines = []
 
   for (const line of lines.slice(1)) {
-    const urlMatch = line.match(/^(?:image\s*url|image\s*link|url)\s*[:\-]\s*(https?:\/\/\S+)/i)
+    const urlMatch = line.match(/^(?:image\s*url|image\s*link|url|ссылка\s*на\s*изображение|ссылка\s*на\s*фото)\s*[:\-]\s*(https?:\/\/\S+)/i)
     if (urlMatch?.[1]) {
       imageUrls.push(urlMatch[1].trim().replace(/[),.;]+$/, ''))
       continue
     }
-    const imageMatch = line.match(/^(?:image idea|image|illustration|photo)\s*[:\-]\s*(.+)$/i)
+    const imageMatch = line.match(/^(?:image idea|image|illustration|photo|изображение|картинка|иллюстрация|фото)\s*[:\-]\s*(.+)$/i)
     if (imageMatch?.[1]) {
       imageHints.push(imageMatch[1].trim())
       continue
@@ -383,9 +383,10 @@ function extractSlideParts(slideText, index) {
   }
 }
 
-async function resolveImageDataUrlFromProxy(imageUrl) {
+async function resolveImageDataUrlFromProxy(imageUrl, query) {
   const clean = String(imageUrl || '').trim()
-  if (!/^https?:\/\//i.test(clean)) {
+  const safeQuery = String(query || '').trim()
+  if (!/^https?:\/\//i.test(clean) && !safeQuery) {
     return ''
   }
   const controller = new AbortController()
@@ -394,7 +395,7 @@ async function resolveImageDataUrlFromProxy(imageUrl) {
     const response = await fetch(IMAGE_PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: clean }),
+      body: JSON.stringify({ url: clean, query: safeQuery }),
       signal: controller.signal
     })
     if (!response.ok) {
@@ -426,6 +427,20 @@ async function loadImageElement(dataUrl) {
   })
 }
 
+function drawImageCover(ctx, image, x, y, width, height) {
+  const sourceWidth = image?.naturalWidth || image?.width || 0
+  const sourceHeight = image?.naturalHeight || image?.height || 0
+  if (!sourceWidth || !sourceHeight) {
+    return
+  }
+  const scale = Math.max(width / sourceWidth, height / sourceHeight)
+  const drawWidth = sourceWidth * scale
+  const drawHeight = sourceHeight * scale
+  const drawX = x + (width - drawWidth) / 2
+  const drawY = y + (height - drawHeight) / 2
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+}
+
 function drawRoundedRect(ctx, x, y, width, height, radius) {
   const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2))
   ctx.beginPath()
@@ -453,7 +468,9 @@ function drawIllustrationCard(ctx, x, y, width, height, palette, hint, index, im
     ctx.save()
     drawRoundedRect(ctx, x + 18, y + 58, width - 36, height - 76, 18)
     ctx.clip()
-    ctx.drawImage(imageElement, x + 18, y + 58, width - 36, height - 76)
+    drawImageCover(ctx, imageElement, x + 18, y + 58, width - 36, height - 76)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.18)'
+    ctx.fillRect(x + 18, y + height - 82, width - 36, 64)
     ctx.restore()
   } else {
     ctx.fillStyle = palette.accent
@@ -499,20 +516,71 @@ function drawSlideToCanvas(slideText, index, total, options = {}) {
 
   const { title, body, imageHint } = extractSlideParts(slideText, index)
   const textMaxWidth = withIllustration ? 860 : 1340
+  const isCover = index === 0
 
-  ctx.fillStyle = '#ffffff'
-  ctx.font = '700 54px Arial, sans-serif'
-  for (const line of wrapCanvasText(ctx, title, textMaxWidth, 1)) {
-    ctx.fillText(line, 90, 78)
+  ctx.save()
+  ctx.globalAlpha = 0.1
+  ctx.fillStyle = palette.accent
+  ctx.beginPath()
+  ctx.arc(1390, 70, 250, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = palette.header
+  ctx.beginPath()
+  ctx.arc(70, 830, 300, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+
+  if (isCover) {
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '700 64px Arial, sans-serif'
+    for (const line of wrapCanvasText(ctx, title, 980, 2)) {
+      ctx.fillText(line, 90, 76)
+    }
+
+    ctx.fillStyle = palette.text
+    ctx.font = '400 38px Arial, sans-serif'
+    const introLines = wrapCanvasText(ctx, body || imageHint || title, 820, 8)
+    let introY = 250
+    for (const line of introLines) {
+      ctx.fillText(line, 115, introY)
+      introY += 56
+    }
+
+    if (withIllustration) {
+      drawIllustrationCard(ctx, 1010, 170, 500, 560, palette, imageHint || title, index, options.imageElement || null)
+    }
+
+    ctx.fillStyle = palette.accent
+    ctx.fillRect(115, 760, 220, 10)
+    ctx.fillStyle = palette.header
+    ctx.font = '700 28px Arial, sans-serif'
+    ctx.fillText(`${index + 1} / ${total}`, 90, 835)
+    return canvas
   }
 
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '700 50px Arial, sans-serif'
+  for (const line of wrapCanvasText(ctx, title, textMaxWidth, 1)) {
+    ctx.fillText(line, 90, 76)
+  }
+
+  drawRoundedRect(ctx, 90, 175, withIllustration ? 900 : 1420, 585, 24)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.78)'
+  ctx.fill()
+  ctx.strokeStyle = palette.panelStroke
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  ctx.fillStyle = palette.accent
+  ctx.fillRect(125, 220, 10, 480)
+
   ctx.fillStyle = palette.text
-  ctx.font = '400 37px Arial, sans-serif'
-  const bodyLines = wrapCanvasText(ctx, body || title, textMaxWidth, 12)
-  let y = 210
+  ctx.font = '400 35px Arial, sans-serif'
+  const bodyLines = wrapCanvasText(ctx, body || title, withIllustration ? 760 : 1250, 10)
+  let y = 250
   for (const line of bodyLines) {
-    ctx.fillText(line, 120, y)
-    y += 54
+    ctx.fillText(line, 165, y)
+    y += 52
   }
 
   if (withIllustration) {
@@ -542,8 +610,13 @@ async function buildPresentationPdfBlob(order, text) {
 
     const slideParts = extractSlideParts(slide, index)
     let imageElement = null
-    if (withIllustration && slideParts.imageUrl) {
-      const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl)
+    if (withIllustration) {
+      const req = order?.frozen_requirements || {}
+      const query = [slideParts.imageHint, slideParts.title, req.topic, req.subject]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join(' ')
+      const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl, query)
       imageElement = await loadImageElement(proxiedDataUrl)
     }
 

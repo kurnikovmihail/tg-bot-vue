@@ -152,8 +152,9 @@ function buildOutputFileInstruction(serviceType) {
       'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
       'For each slide include a short title and concise slide text.',
       'If images are required, add one explicit line per slide: "Image URL: <https://...>".',
-      'Optionally after URL, add one more line: "Image idea: <what should be shown>".',
-      'Use direct image links to actual files (jpg, jpeg, png, webp), not gallery pages.'
+      'After the URL, always add one more line: "Image idea: <specific searchable description>".',
+      'Use direct image links to actual files (jpg, jpeg, png, webp), not gallery pages.',
+      'If you are not sure the URL is a direct image file, still provide a strong Image idea so the platform can find a reliable image automatically.'
     ].join('\n')
   }
 

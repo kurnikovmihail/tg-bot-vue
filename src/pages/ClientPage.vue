@@ -575,6 +575,17 @@ function refreshCurrentOrder() {
   }
 }
 
+function refreshMyOrdersManual() {
+  refreshMyOrders()
+  showNotice('Список заказов обновлен.', 'info')
+}
+
+function refreshCurrentOrderManual() {
+  refreshCurrentOrder()
+  void syncResultPreviewFromOrder(selectedOrder.value)
+  showNotice('Заказ обновлен.', 'info')
+}
+
 function canRequestRevision(order) {
   if (!order) {
     return false
@@ -681,6 +692,14 @@ function submitFeedback() {
   goMenu()
 }
 
+function isMobileLikeBrowser() {
+  const nav = window.navigator
+  return (
+    /Android|iPhone|iPad|iPod/i.test(nav.userAgent || '') ||
+    Boolean(window.matchMedia?.('(pointer: coarse)')?.matches)
+  )
+}
+
 async function saveResultFile(blob, filename) {
   const nav = window.navigator
   const lowerName = String(filename || '').toLowerCase()
@@ -712,12 +731,28 @@ async function saveResultFile(blob, filename) {
         : ext === '.pptx'
           ? 'PowerPoint presentation'
           : 'Text file'
+  const safeFilename = String(filename || `result${ext}`).trim() || `result${ext}`
+  const typedBlob = blob?.type ? blob : new Blob([blob], { type: mime })
+
+  if (isMobileLikeBrowser() && typeof File !== 'undefined' && nav.canShare && nav.share) {
+    const file = new File([typedBlob], safeFilename, { type: mime })
+    if (nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: safeFilename })
+        return 'shared'
+      } catch (error) {
+        if (String(error?.name || '').toLowerCase() === 'aborterror') {
+          return 'canceled'
+        }
+      }
+    }
+  }
 
   // Modern desktop browsers with native file picker.
-  if (window.showSaveFilePicker) {
+  if (!isMobileLikeBrowser() && window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
+        suggestedName: safeFilename,
         types: [
           {
             description: fileDescription,
@@ -726,19 +761,21 @@ async function saveResultFile(blob, filename) {
         ]
       })
       const writable = await handle.createWritable()
-      await writable.write(blob)
+      await writable.write(typedBlob)
       await writable.close()
       return 'saved'
-    } catch {
-      // fallback to next strategy
+    } catch (error) {
+      if (String(error?.name || '').toLowerCase() === 'aborterror') {
+        return 'canceled'
+      }
     }
   }
 
   // Mobile-friendly fallback: share a real file via system sheet.
 
   const link = document.createElement('a')
-  link.href = window.URL.createObjectURL(blob)
-  link.download = filename
+  link.href = window.URL.createObjectURL(typedBlob)
+  link.download = safeFilename
   link.rel = 'noopener'
   link.style.display = 'none'
   document.body.append(link)
@@ -746,19 +783,64 @@ async function saveResultFile(blob, filename) {
   link.remove()
   window.setTimeout(() => {
     window.URL.revokeObjectURL(link.href)
-  }, 1500)
+  }, 60_000)
   return 'downloaded'
+}
+
+function openDownloadWindow(filename) {
+  try {
+    const win = window.open('', '_blank')
+    if (!win) {
+      return null
+    }
+    const safeTitle = String(filename || 'presentation.pdf').replace(/[<>&"]/g, '')
+    win.document.write(
+      `<!doctype html><html><head><title>${safeTitle}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Arial,sans-serif;padding:24px"><p>Готовим файл...</p></body></html>`
+    )
+    win.document.close()
+    return win
+  } catch {
+    return null
+  }
+}
+
+function openBlobInPreparedWindow(preparedWindow, blob) {
+  if (!preparedWindow || preparedWindow.closed) {
+    return false
+  }
+  const url = window.URL.createObjectURL(blob)
+  preparedWindow.location.href = url
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(url)
+  }, 60_000)
+  return true
 }
 
 async function downloadCurrentResult() {
   if (!selectedOrder.value || !hasResultText.value) {
     return
   }
+  const preparedWindow =
+    selectedOrder.value.service_type === SERVICE_PRESENTATION
+      ? openDownloadWindow(`presentation_${selectedOrder.value.id || 'result'}.pdf`)
+      : null
   try {
     const { blob, filename } = await exportOrderResultAsFile(selectedOrder.value)
+    if (
+      preparedWindow &&
+      String(blob?.type || '').includes('application/pdf') &&
+      openBlobInPreparedWindow(preparedWindow, blob)
+    ) {
+      showNotice('PDF открыт в новой вкладке. Там его можно сохранить или отправить.', 'success')
+      return
+    }
     const mode = await saveResultFile(blob, filename)
     if (mode === 'shared') {
       showNotice('Открылось системное меню: сохраните файл в удобное место.', 'info')
+      return
+    }
+    if (mode === 'canceled') {
+      showNotice('Скачивание отменено.', 'info')
       return
     }
     if (mode === 'saved') {
@@ -767,6 +849,9 @@ async function downloadCurrentResult() {
     }
     showNotice('Скачивание запущено. Если файл не сохранился, откройте результат и скопируйте текст.', 'info')
   } catch {
+    if (preparedWindow && !preparedWindow.closed) {
+      preparedWindow.close()
+    }
     openResultViewer()
     showNotice('Не удалось скачать файл в этом браузере. Открыл результат для просмотра.', 'warn')
   }
@@ -974,7 +1059,7 @@ onMounted(() => {
           </li>
         </ul>
         <div class="row">
-          <button class="btn btn-secondary" @click="refreshMyOrders">🔄 Обновить</button>
+          <button class="btn btn-secondary" @click="refreshMyOrdersManual">🔄 Обновить</button>
           <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>
       </div>
@@ -1034,7 +1119,7 @@ onMounted(() => {
           >
             🔁 Внести правки
           </button>
-          <button class="btn btn-secondary" :disabled="busy" @click="refreshCurrentOrder">🔄 Обновить</button>
+          <button class="btn btn-secondary" :disabled="busy" @click="refreshCurrentOrderManual">🔄 Обновить</button>
           <button class="btn btn-ghost" @click="openMyOrders">📂 Мои заказы</button>
           <button class="btn btn-ghost" @click="goMenu">⬅ В меню</button>
         </div>

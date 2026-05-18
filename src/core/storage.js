@@ -5,6 +5,7 @@ import {
   ORDER_STATUS_IN_PROGRESS,
   ORDER_STATUS_IN_REVISION,
   ORDER_STATUS_READY,
+  SERVICE_PRESENTATION,
   getOffer
 } from './catalog'
 import { publicOrderNo } from './orderNumbers'
@@ -565,6 +566,7 @@ function parseEmbeddedLlmFile(resultText) {
 
 export async function exportOrderResultAsFile(order) {
   const safeText = String(order?.result_text || '')
+  const isPresentationOrder = order?.service_type === SERVICE_PRESENTATION
   const embeddedFile = parseEmbeddedLlmFile(safeText)
   if (embeddedFile) {
     return embeddedFile
@@ -573,9 +575,14 @@ export async function exportOrderResultAsFile(order) {
   if (remoteUrl) {
     try {
       return await fetchRemoteFile(remoteUrl, sanitizeFilename(`order_${order?.id || 'result'}_file`, 'order_result_file'))
-    } catch {
-      // Ignore and fall back to raw text file.
+    } catch (error) {
+      if (isPresentationOrder) {
+        throw new Error(`Presentation file URL is not доступен: ${String(error?.message || error || 'download failed')}`)
+      }
     }
+  }
+  if (isPresentationOrder) {
+    throw new Error('Для презентации ожидается готовый PDF-файл от нейросети (вложение/base64 file object или рабочая URL-ссылка).')
   }
   return buildGeneratedResultFile(order, safeText)
 }

@@ -127,11 +127,16 @@ function summarizePreviousResult(value) {
 }
 
 function buildLlmSystemPrompt(order, mode) {
+  const serviceType = order?.service_type
+  if (serviceType === SERVICE_PRESENTATION) {
+    return buildOutputFileInstruction(serviceType)
+  }
+
   const modeInstruction =
     mode === 'revision'
       ? 'Revise the existing completed work according to the client revision request.'
       : 'Generate the final completed work according to client requirements.'
-  const fileInstruction = buildOutputFileInstruction(order?.service_type)
+  const fileInstruction = buildOutputFileInstruction(serviceType)
 
   return [
     LLM_GLOBAL_QUALITY_RULES,

@@ -16,6 +16,7 @@ import {
 import { APP_CONFIG, applyRevision, generateInitial } from '../core/generator'
 import { publicOrderNo } from '../core/orderNumbers'
 import { calculateOrderPrice, hasVolumePricing } from '../core/pricing'
+import { buildPresentationPreviewImageBlob } from '../core/resultFiles'
 import { getOrCreateActiveUserId } from '../core/session'
 import {
   applyRevisionResult,
@@ -153,11 +154,14 @@ const resultPreview = reactive({
   mimeType: '',
   objectUrl: '',
   docxHtml: '',
+  previewImageUrl: '',
   text: '',
   error: '',
-  blob: null
+  blob: null,
+  orderKey: ''
 })
 let resultPreviewUrlToken = ''
+let resultPreviewImageUrlToken = ''
 let resultPreviewRequestId = 0
 const downloadResultButtonLabel = computed(() => {
   if (!selectedOrder.value) {
@@ -174,6 +178,7 @@ const downloadResultButtonLabel = computed(() => {
 const canDownloadCurrentResult = computed(() => {
   return (
     hasResultText.value &&
+    resultPreview.orderKey === currentOrderPreviewKey(selectedOrder.value) &&
     resultPreview.status === 'ready' &&
     Boolean(resultPreview.blob) &&
     Boolean(resultPreview.filename)
@@ -226,10 +231,26 @@ function extractErrorMessage(error) {
   return raw.length > 220 ? `${raw.slice(0, 217)}...` : raw
 }
 
+function currentOrderPreviewKey(order) {
+  if (!order) {
+    return ''
+  }
+  return [
+    Number(order.id || 0),
+    Number(order.result_version || 0),
+    String(order.updated_at || ''),
+    String(order.result_text || '').length
+  ].join(':')
+}
+
 function resetResultPreview() {
   if (resultPreviewUrlToken) {
     window.URL.revokeObjectURL(resultPreviewUrlToken)
     resultPreviewUrlToken = ''
+  }
+  if (resultPreviewImageUrlToken) {
+    window.URL.revokeObjectURL(resultPreviewImageUrlToken)
+    resultPreviewImageUrlToken = ''
   }
   resultPreview.status = 'idle'
   resultPreview.kind = 'none'
@@ -237,13 +258,16 @@ function resetResultPreview() {
   resultPreview.mimeType = ''
   resultPreview.objectUrl = ''
   resultPreview.docxHtml = ''
+  resultPreview.previewImageUrl = ''
   resultPreview.text = ''
   resultPreview.error = ''
   resultPreview.blob = null
+  resultPreview.orderKey = ''
 }
 
 async function syncResultPreviewFromOrder(order) {
   const requestId = ++resultPreviewRequestId
+  const previewKey = currentOrderPreviewKey(order)
   resetResultPreview()
   if (!order) {
     return
@@ -272,11 +296,20 @@ async function syncResultPreviewFromOrder(order) {
   resultPreview.blob = inspected.blob
   resultPreview.filename = inspected.filename
   resultPreview.mimeType = String(inspected.blob?.type || '').toLowerCase()
+  resultPreview.orderKey = previewKey
 
   if (resultPreview.mimeType.includes('application/pdf')) {
     resultPreview.kind = 'pdf'
     resultPreviewUrlToken = window.URL.createObjectURL(resultPreview.blob)
     resultPreview.objectUrl = resultPreviewUrlToken
+    if (order.service_type === SERVICE_PRESENTATION) {
+      const imageBlob = await buildPresentationPreviewImageBlob(order, order.result_text)
+      if (requestId !== resultPreviewRequestId) {
+        return
+      }
+      resultPreviewImageUrlToken = window.URL.createObjectURL(imageBlob)
+      resultPreview.previewImageUrl = resultPreviewImageUrlToken
+    }
     resultPreview.status = 'ready'
     return
   }
@@ -343,6 +376,7 @@ async function recoverInProgressOrders() {
       }
       try {
         const generated = await generateInitial(fresh)
+        await ensurePresentationFileBuilt(fresh, generated)
         setReady(Number(fresh.id), generated, APP_CONFIG.revisionWindowHours)
       } catch (error) {
         setOrderError(Number(fresh.id), extractErrorMessage(error))
@@ -351,6 +385,16 @@ async function recoverInProgressOrders() {
   } finally {
     recoveryInFlight = false
   }
+}
+
+async function ensurePresentationFileBuilt(order, resultText) {
+  if (order?.service_type !== SERVICE_PRESENTATION) {
+    return
+  }
+  await exportOrderResultAsFile({
+    ...order,
+    result_text: String(resultText || '')
+  })
 }
 
 function scheduleRecoveryLoop() {
@@ -549,6 +593,7 @@ async function runGenerationForOrder(order, options = {}) {
   const openedFromPayment = Boolean(options.openedFromPayment)
   try {
     const generated = await generateInitial(order)
+    await ensurePresentationFileBuilt(order, generated)
     const ready = setReady(Number(order.id), generated, APP_CONFIG.revisionWindowHours)
     if (!ready) {
       showNotice('Ошибка сохранения результата. Попробуйте обновить страницу.', 'error')
@@ -675,6 +720,7 @@ async function submitRevision() {
   busy.value = true
   try {
     const revisedText = await applyRevision(inRevision, text)
+    await ensurePresentationFileBuilt(inRevision, revisedText)
     const closeFlag = Number(inRevision.revision_used) + 1 >= Number(inRevision.revision_limit)
     const updated = applyRevisionResult(Number(inRevision.id), text, revisedText, closeFlag)
     if (!updated) {
@@ -1105,6 +1151,12 @@ onMounted(() => {
             Файл: <strong>{{ resultPreview.filename }}</strong>
           </p>
           <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
+          <img
+            v-else-if="resultPreview.kind === 'pdf' && resultPreview.previewImageUrl"
+            class="result-preview-image"
+            :src="resultPreview.previewImageUrl"
+            alt="Предпросмотр первого слайда"
+          />
           <iframe
             v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
             class="result-iframe"
@@ -1183,6 +1235,12 @@ onMounted(() => {
             Файл: <strong>{{ resultPreview.filename }}</strong>
           </p>
           <p class="muted" v-if="resultPreview.status === 'loading'">Подготовка предпросмотра...</p>
+          <img
+            v-else-if="resultPreview.kind === 'pdf' && resultPreview.previewImageUrl"
+            class="result-preview-image"
+            :src="resultPreview.previewImageUrl"
+            alt="Предпросмотр первого слайда"
+          />
           <iframe
             v-else-if="resultPreview.kind === 'pdf' && resultPreview.objectUrl"
             class="result-iframe"

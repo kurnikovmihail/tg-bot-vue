@@ -38,6 +38,7 @@
 ```env
 LLM_API_KEY=YOUR_API_KEY
 LLM_MODEL=openai/gpt-5.4
+LLM_MODEL_PRESENTATION=openai/gpt-5.5
 LLM_API_URL=https://polza.ai/api/v1/chat/completions
 LLM_API_MODE=chat_completions
 LLM_CLIENT_ID=tg-bot-vue
@@ -47,6 +48,7 @@ LLM_CLIENT_ID=tg-bot-vue
 
 ```env
 VITE_LLM_MODEL=openai/gpt-5.4
+VITE_LLM_MODEL_PRESENTATION=openai/gpt-5.5
 VITE_LLM_TRANSPORT=relay
 VITE_LLM_RELAY_PATH=/api/llm
 VITE_LLM_TIMEOUT_MS=90000

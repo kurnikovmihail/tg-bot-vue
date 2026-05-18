@@ -648,6 +648,26 @@ async function buildPresentationPdfBlob(order, text) {
   return pdf.output('blob')
 }
 
+export async function buildPresentationPreviewImageBlob(order, resultText) {
+  const text = getRenderableResultText(resultText, order)
+  const palette = detectPresentationPalette(order, text)
+  const slides = splitPresentationSlides(cleanPresentationTextForOutput(text), order)
+  const withIllustration = arePresentationImagesRequested(order, text)
+  const firstSlide = slides[0] || text
+  const slideParts = extractSlideParts(firstSlide, 0)
+  let imageElement = null
+  if (withIllustration && slideParts.imageUrl) {
+    const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl)
+    imageElement = await loadImageElement(proxiedDataUrl)
+  }
+  const canvas = drawSlideToCanvas(firstSlide, 0, slides.length || 1, { palette, withIllustration, imageElement })
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob || new Blob([], { type: 'image/jpeg' }))
+    }, 'image/jpeg', 0.92)
+  })
+}
+
 export async function buildGeneratedResultFile(order, resultText) {
   const text = getRenderableResultText(resultText, order)
   if (order?.service_type === SERVICE_PRESENTATION) {

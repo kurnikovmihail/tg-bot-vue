@@ -196,6 +196,15 @@ pre {
   background: white;
 }
 
+.result-preview-image {
+  display: block;
+  width: 100%;
+  max-height: 62vh;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: white;
+}
+
 .docx-preview {
   min-height: 52vh;
   padding: var(--space-3);

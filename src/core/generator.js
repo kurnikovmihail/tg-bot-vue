@@ -27,6 +27,7 @@ export const APP_CONFIG = {
   apiUrl: normalized(env.VITE_LLM_API_URL, 'https://polza.ai/api/v1/chat/completions'),
   apiMode: normalized(env.VITE_LLM_API_MODE, 'chat_completions'),
   apiModel: normalized(env.VITE_LLM_MODEL, 'openai/gpt-5.4'),
+  apiPresentationModel: normalized(env.VITE_LLM_MODEL_PRESENTATION, 'openai/gpt-5.5'),
   apiClientId: normalized(env.VITE_LLM_CLIENT_ID, normalized(env.VITE_LLM_APP_TITLE))
 }
 
@@ -145,16 +146,13 @@ function buildLlmSystemPrompt(order, mode) {
 function buildOutputFileInstruction(serviceType) {
   if (serviceType === SERVICE_PRESENTATION) {
     return [
-      'The platform will convert your final answer into a ready-to-open PDF file.',
-      'Return the final presentation content as clean structured text only.',
-      'Do not return base64, data URLs, binary payloads, JSON file wrappers, or code fences.',
-      'At the very top, add one metadata line: "Theme color: <color>".',
-      'Do not make presentations look the same every time: choose a fresh structure, visual rhythm, theme color, and layout logic for each new order.',
-      'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
-      'For each slide include a short title and concise slide text.',
-      'If images are required, add exactly one line per slide in this format: "Image URL: <direct https URL to an image file>".',
-      'The Image URL must open directly as an image file in a browser and should point to jpg, jpeg, png, webp, gif, avif, or svg.',
-      'Do not add any other URLs in the presentation text.'
+      'ТЕСТОВЫЙ РЕЖИМ ДЛЯ ПРЕЗЕНТАЦИЙ.',
+      'Самостоятельно полностью собери готовую презентацию: структура, текст, оформление, визуальная логика, изображения и финальная верстка должны быть внутри итогового файла.',
+      'Верни только готовый PDF-файл презентации, который открывается на телефоне и ноутбуке без дополнительных действий.',
+      'Не возвращай отдельно план, текст слайдов, комментарии, пояснения, черновики или служебные пометки.',
+      'Если интерфейс ответа поддерживает прикрепление файла, прикрепи PDF как файл.',
+      'Если интерфейс ответа не поддерживает прямое прикрепление файла, верни машинно-читаемый файловый объект с PDF-содержимым: type=file, filename с расширением .pdf, mimeType=application/pdf и base64 содержимое файла.',
+      'Не делай презентации однотипными: для каждого нового заказа выбирай новое визуальное решение, композицию, цветовую логику и ритм слайдов.'
     ].join('\n')
   }
 
@@ -196,16 +194,24 @@ export async function pingLlm() {
   return String(reply || '').trim()
 }
 
-async function callLlm({ systemPrompt, userPrompt, maxTokens }) {
+async function callLlm({ order, systemPrompt, userPrompt, maxTokens }) {
   const mode = getTransportMode()
+  const model = getModelForOrder(order)
+  const serviceType = order?.service_type || ''
   if (mode === 'relay') {
-    return callLlmViaRelay({ systemPrompt, userPrompt, maxTokens })
+    return callLlmViaRelay({ systemPrompt, userPrompt, maxTokens, model, serviceType })
   }
 
-  return callLlmDirect({ systemPrompt, userPrompt, maxTokens })
+  return callLlmDirect({ systemPrompt, userPrompt, maxTokens, model })
 }
 
-async function callLlmViaRelay({ systemPrompt, userPrompt, maxTokens }) {
+function getModelForOrder(order) {
+  return order?.service_type === SERVICE_PRESENTATION
+    ? APP_CONFIG.apiPresentationModel
+    : APP_CONFIG.apiModel
+}
+
+async function callLlmViaRelay({ systemPrompt, userPrompt, maxTokens, model, serviceType }) {
   const response = await fetchWithRetry(APP_CONFIG.relayPath, {
     method: 'POST',
     headers: {
@@ -215,7 +221,8 @@ async function callLlmViaRelay({ systemPrompt, userPrompt, maxTokens }) {
       systemPrompt,
       userPrompt,
       maxTokens,
-      model: APP_CONFIG.apiModel,
+      model,
+      serviceType,
       apiMode: APP_CONFIG.apiMode
     })
   })
@@ -233,7 +240,7 @@ async function callLlmViaRelay({ systemPrompt, userPrompt, maxTokens }) {
   return text
 }
 
-async function callLlmDirect({ systemPrompt, userPrompt, maxTokens }) {
+async function callLlmDirect({ systemPrompt, userPrompt, maxTokens, model }) {
   const headers = {
     Authorization: `Bearer ${APP_CONFIG.apiKey}`,
     'Content-Type': 'application/json'
@@ -247,7 +254,7 @@ async function callLlmDirect({ systemPrompt, userPrompt, maxTokens }) {
   let body
   if (mode === 'responses') {
     body = {
-      model: APP_CONFIG.apiModel,
+      model,
       input: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -256,7 +263,7 @@ async function callLlmDirect({ systemPrompt, userPrompt, maxTokens }) {
     }
   } else {
     body = {
-      model: APP_CONFIG.apiModel,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }

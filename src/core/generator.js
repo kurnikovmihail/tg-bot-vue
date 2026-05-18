@@ -147,8 +147,9 @@ function buildOutputFileInstruction(serviceType) {
     return [
       'The platform will convert your final answer into a ready-to-open PDF file.',
       'Return the final presentation content as clean structured text only.',
-      'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links, or code fences.',
+      'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links for the final presentation file, or code fences.',
       'At the very top, add one metadata line: "Theme color: <color>".',
+      'Do not make presentations look the same every time: choose a fresh structure, visual rhythm, theme color, and layout logic for each new order.',
       'Use clear slide sections: "Slide 1: ...", "Slide 2: ...".',
       'For each slide include a short title and concise slide text.',
       'If images are required, add one explicit line per slide: "Image URL: <https://...>".',
@@ -163,7 +164,7 @@ function buildOutputFileInstruction(serviceType) {
   return [
     'The platform will convert your final answer into a ready-to-open Word DOCX file.',
     'Return the full final work as clean structured text only.',
-    'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links, or code fences.',
+    'Do not return base64, data URLs, binary payloads, JSON file wrappers, download links for the final document file, or code fences.',
     'Use headings, paragraphs, lists, and bibliography sections when required.'
   ].join('\n')
 }

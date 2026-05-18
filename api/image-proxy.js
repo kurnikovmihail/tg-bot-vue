@@ -50,13 +50,6 @@ function normalizeImageUrl(input) {
   }
 }
 
-function normalizeSearchQuery(input) {
-  return String(input || '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .slice(0, 160)
-}
-
 function pickImageMime(contentTypeRaw, url) {
   const contentType = String(contentTypeRaw || '').toLowerCase().split(';')[0].trim()
   if (ALLOWED_IMAGE_MIME.has(contentType)) {
@@ -81,53 +74,16 @@ function pickImageMime(contentTypeRaw, url) {
   return ''
 }
 
-async function findCommonsImageUrl(query) {
-  const safeQuery = normalizeSearchQuery(query)
-  if (!safeQuery) {
-    return ''
-  }
-
-  const apiUrl = new URL('https://commons.wikimedia.org/w/api.php')
-  apiUrl.searchParams.set('action', 'query')
-  apiUrl.searchParams.set('generator', 'search')
-  apiUrl.searchParams.set('gsrnamespace', '6')
-  apiUrl.searchParams.set('gsrlimit', '8')
-  apiUrl.searchParams.set('gsrsearch', safeQuery)
-  apiUrl.searchParams.set('prop', 'imageinfo')
-  apiUrl.searchParams.set('iiprop', 'url|mime')
-  apiUrl.searchParams.set('iiurlwidth', '1400')
-  apiUrl.searchParams.set('format', 'json')
-  apiUrl.searchParams.set('origin', '*')
-
-  const response = await fetch(apiUrl, { redirect: 'follow' })
-  if (!response.ok) {
-    return ''
-  }
-
-  const data = await response.json()
-  const pages = Object.values(data?.query?.pages || {})
-  for (const page of pages) {
-    const info = page?.imageinfo?.[0]
-    const mime = String(info?.mime || '').toLowerCase()
-    const candidate = String(info?.thumburl || info?.url || '').trim()
-    if (candidate && ALLOWED_IMAGE_MIME.has(mime)) {
-      return candidate
-    }
-  }
-  return ''
-}
-
-function buildPicsumFallbackUrl(query) {
-  const seed = encodeURIComponent(normalizeSearchQuery(query) || 'presentation-slide')
-  return `https://picsum.photos/seed/${seed}/1400/900`
-}
-
 async function fetchImageAsDataUrl(imageUrl) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
     const response = await fetch(imageUrl, {
       method: 'GET',
+      headers: {
+        Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8',
+        'User-Agent': 'GTm-presentation-image-proxy/1.0'
+      },
       redirect: 'follow',
       signal: controller.signal
     })
@@ -187,50 +143,21 @@ export default async function handler(req, res) {
     return
   }
 
-  const requestedUrl = normalizeImageUrl(body?.url)
-  const query = normalizeSearchQuery(body?.query)
-  if (!requestedUrl && !query) {
-    sendJson(res, 400, { error: 'Valid image URL or search query is required.' })
+  const imageUrl = normalizeImageUrl(body?.url)
+  if (!imageUrl) {
+    sendJson(res, 400, { error: 'Valid http/https image URL is required.' })
     return
   }
 
-  const candidates = []
-  if (requestedUrl) {
-    candidates.push(requestedUrl)
-  }
-  const commonsUrl = await findCommonsImageUrl(query)
-  if (commonsUrl) {
-    candidates.push(commonsUrl)
-  }
-  if (query) {
-    candidates.push(buildPicsumFallbackUrl(query))
-  }
-
-  let lastError = null
-  for (const candidate of candidates) {
-    try {
-      const result = await fetchImageAsDataUrl(candidate)
-      sendJson(res, 200, {
-        ok: true,
-        url: candidate,
-        mimeType: result.mimeType,
-        dataUrl: result.dataUrl
-      })
-      return
-    } catch (error) {
-      lastError = error
-    }
-  }
-
   try {
-    const result = await fetchImageAsDataUrl(buildPicsumFallbackUrl('presentation-slide'))
+    const result = await fetchImageAsDataUrl(imageUrl)
     sendJson(res, 200, {
       ok: true,
-      url: buildPicsumFallbackUrl('presentation-slide'),
+      url: imageUrl,
       mimeType: result.mimeType,
       dataUrl: result.dataUrl
     })
   } catch (error) {
-    sendJson(res, 422, { error: String(lastError?.message || error?.message || 'Image fetch failed') })
+    sendJson(res, 422, { error: String(error?.message || 'Image fetch failed') })
   }
 }

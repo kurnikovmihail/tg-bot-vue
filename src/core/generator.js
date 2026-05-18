@@ -153,8 +153,10 @@ function buildOutputFileInstruction(serviceType) {
       'For each slide include a short title and concise slide text.',
       'If images are required, add one explicit line per slide: "Image URL: <https://...>".',
       'After the URL, always add one more line: "Image idea: <specific searchable description>".',
-      'Use direct image links to actual files (jpg, jpeg, png, webp), not gallery pages.',
-      'If you are not sure the URL is a direct image file, still provide a strong Image idea so the platform can find a reliable image automatically.'
+      'Use only direct image file links that you are confident are relevant to the slide topic (jpg, jpeg, png, webp).',
+      'Prefer stable public-domain or freely licensed direct image URLs from Wikimedia Commons upload.wikimedia.org when the topic needs real factual images.',
+      'Do not use random image services, placeholder image services, gallery pages, search pages, or unrelated decorative photos.',
+      'If you are not sure the URL is a direct image file, leave Image URL empty and provide a strong Image idea for a designed visual placeholder.'
     ].join('\n')
   }
 

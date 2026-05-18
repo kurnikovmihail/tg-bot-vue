@@ -383,10 +383,9 @@ function extractSlideParts(slideText, index) {
   }
 }
 
-async function resolveImageDataUrlFromProxy(imageUrl, query) {
+async function resolveImageDataUrlFromProxy(imageUrl) {
   const clean = String(imageUrl || '').trim()
-  const safeQuery = String(query || '').trim()
-  if (!/^https?:\/\//i.test(clean) && !safeQuery) {
+  if (!/^https?:\/\//i.test(clean)) {
     return ''
   }
   const controller = new AbortController()
@@ -395,7 +394,7 @@ async function resolveImageDataUrlFromProxy(imageUrl, query) {
     const response = await fetch(IMAGE_PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: clean, query: safeQuery }),
+      body: JSON.stringify({ url: clean }),
       signal: controller.signal
     })
     if (!response.ok) {
@@ -610,13 +609,8 @@ async function buildPresentationPdfBlob(order, text) {
 
     const slideParts = extractSlideParts(slide, index)
     let imageElement = null
-    if (withIllustration) {
-      const req = order?.frozen_requirements || {}
-      const query = [slideParts.imageHint, slideParts.title, req.topic, req.subject]
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-        .join(' ')
-      const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl, query)
+    if (withIllustration && slideParts.imageUrl) {
+      const proxiedDataUrl = await resolveImageDataUrlFromProxy(slideParts.imageUrl)
       imageElement = await loadImageElement(proxiedDataUrl)
     }
 
